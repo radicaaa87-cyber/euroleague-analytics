@@ -59,6 +59,11 @@ def main() -> int:
         action="store_true",
         help="Also pull play-by-play for every discovered match",
     )
+    parser.add_argument(
+        "--no-boxscores",
+        action="store_true",
+        help="Skip player boxscores. Boxscores are pulled by default.",
+    )
     args = parser.parse_args()
 
     client = ACBClient()
@@ -72,7 +77,29 @@ def main() -> int:
         _write_json(season_dir / "matches.json", matches)
 
         pulled_pbp = 0
+        pulled_boxscores = 0
         skipped = 0
+
+        if not args.no_boxscores:
+            boxscore_dir = season_dir / "boxscores"
+            for match in matches:
+                match_id = _match_id(match)
+                if match_id is None:
+                    skipped += 1
+                    continue
+
+                try:
+                    payload = client.boxscore(args.season, match_id)
+                except ACBAPIError as failure:
+                    print(
+                        f"ACB boxscore failed for match {match_id}: {failure}",
+                        file=sys.stderr,
+                    )
+                    skipped += 1
+                    continue
+
+                _write_json(boxscore_dir / f"{match_id}.json", payload)
+                pulled_boxscores += 1
 
         if args.with_pbp:
             pbp_dir = season_dir / "play_by_play"
@@ -99,6 +126,7 @@ def main() -> int:
             "season": args.season,
             "edition_id": client.edition_id(args.season),
             "matches": len(matches),
+            "boxscore_files": pulled_boxscores,
             "play_by_play_files": pulled_pbp,
             "skipped": skipped,
             "output": str(season_dir),
