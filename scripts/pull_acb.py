@@ -1,144 +1,74 @@
-"""Pull a Liga Endesa season from the official ACB API.
-
-Examples:
-    python scripts/pull_acb.py --season 2025-26
-    python scripts/pull_acb.py --season 2024-25 --with-pbp
-    python scripts/pull_acb.py --season 2025-26 --with-pbp --output data/acb_raw
-
-Requires:
-    ACB_BEARER_TOKEN
-"""
-
+"""Pull one ACB season from the current live.acb.com API."""
 from __future__ import annotations
-
-import argparse
-import json
-import sys
+import argparse, json, sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
 from acb.client import ACBAPIError, ACBClient  # noqa: E402
 
+def _id(row: dict[str, Any]) -> int | None:
+    value = row.get("id") or row.get("idMatch") or row.get("id_match")
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
-def _match_id(row: dict[str, Any]) -> int | None:
-    for key in ("idMatch", "id_match", "id"):
-        value = row.get(key)
-        if value is None:
-            continue
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _write_json(path: Path, payload: Any) -> None:
+def _write(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Pull official ACB / Liga Endesa data")
-    parser.add_argument(
-        "--season",
-        required=True,
-        help="Season such as 2025-26 or 2024-25",
-    )
-    parser.add_argument(
-        "--output",
-        default="data/acb_raw",
-        help="Base output directory (default: data/acb_raw)",
-    )
-    parser.add_argument(
-        "--with-pbp",
-        action="store_true",
-        help="Also pull play-by-play for every discovered match",
-    )
-    parser.add_argument(
-        "--no-boxscores",
-        action="store_true",
-        help="Skip player boxscores. Boxscores are pulled by default.",
-    )
-    args = parser.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument("--season", required=True)
+    p.add_argument("--output", default="data/acb_raw")
+    p.add_argument("--with-pbp", action="store_true")
+    p.add_argument("--with-shots", action="store_true")
+    p.add_argument("--with-advanced", action="store_true")
+    p.add_argument("--no-boxscores", action="store_true")
+    args = p.parse_args()
 
     client = ACBClient()
-    season_dir = Path(args.output) / args.season
+    out = Path(args.output) / args.season
 
     try:
-        weeks = client.matchweeks(args.season)
-        _write_json(season_dir / "matchweeks.json", weeks)
-
         matches = client.season_matches(args.season)
-        _write_json(season_dir / "matches.json", matches)
+        _write(out / "matches.json", matches)
+        counts = {"boxscore_files":0,"play_by_play_files":0,"shot_files":0,"advanced_files":0,"skipped":0}
 
-        pulled_pbp = 0
-        pulled_boxscores = 0
-        skipped = 0
+        for match in matches:
+            match_id = _id(match)
+            if match_id is None:
+                counts["skipped"] += 1
+                continue
 
-        if not args.no_boxscores:
-            boxscore_dir = season_dir / "boxscores"
-            for match in matches:
-                match_id = _match_id(match)
-                if match_id is None:
-                    skipped += 1
-                    continue
+            calls = []
+            if not args.no_boxscores:
+                calls.append(("boxscores", client.boxscore(args.season, match_id), "boxscore_files"))
+            if args.with_pbp:
+                calls.append(("play_by_play", client.play_by_play(match_id), "play_by_play_files"))
+            if args.with_shots:
+                calls.append(("shots", client.shots(match_id), "shot_files"))
+            if args.with_advanced:
+                calls.append(("advanced", client.advanced_stats(match_id), "advanced_files"))
 
-                try:
-                    payload = client.boxscore(args.season, match_id)
-                except ACBAPIError as failure:
-                    print(
-                        f"ACB boxscore failed for match {match_id}: {failure}",
-                        file=sys.stderr,
-                    )
-                    skipped += 1
-                    continue
-
-                _write_json(boxscore_dir / f"{match_id}.json", payload)
-                pulled_boxscores += 1
-
-        if args.with_pbp:
-            pbp_dir = season_dir / "play_by_play"
-            for match in matches:
-                match_id = _match_id(match)
-                if match_id is None:
-                    skipped += 1
-                    continue
-
-                try:
-                    payload = client.play_by_play(match_id)
-                except ACBAPIError as failure:
-                    print(
-                        f"ACB PBP failed for match {match_id}: {failure}",
-                        file=sys.stderr,
-                    )
-                    skipped += 1
-                    continue
-
-                _write_json(pbp_dir / f"{match_id}.json", payload)
-                pulled_pbp += 1
+            for folder, payload, counter in calls:
+                _write(out / folder / f"{match_id}.json", payload)
+                counts[counter] += 1
 
         summary = {
             "season": args.season,
             "edition_id": client.edition_id(args.season),
             "matches": len(matches),
-            "boxscore_files": pulled_boxscores,
-            "play_by_play_files": pulled_pbp,
-            "skipped": skipped,
-            "output": str(season_dir),
+            **counts,
+            "output": str(out),
         }
-        _write_json(season_dir / "pull_summary.json", summary)
+        _write(out / "pull_summary.json", summary)
         print(json.dumps(summary, ensure_ascii=False))
         return 0
-
-    except (ACBAPIError, ValueError) as failure:
-        print(f"ACB pull failed: {failure}", file=sys.stderr)
+    except (ACBAPIError, ValueError) as exc:
+        print(f"ACB pull failed: {exc}", file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
