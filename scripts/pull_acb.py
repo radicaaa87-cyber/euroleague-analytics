@@ -1,6 +1,7 @@
 """Pull one ACB season from the current live.acb.com API."""
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, os, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ def main() -> int:
     p.add_argument("--with-shots", action="store_true")
     p.add_argument("--with-advanced", action="store_true")
     p.add_argument("--no-boxscores", action="store_true")
+    p.add_argument("--workers", type=int, default=int(os.getenv("ACB_PULL_WORKERS", "6")))
     args = p.parse_args()
 
     client = ACBClient()
@@ -37,35 +39,67 @@ def main() -> int:
         counts = {"boxscore_files":0,"play_by_play_files":0,"shot_files":0,"advanced_files":0,"skipped":0}
 
         endpoint_errors: list[dict[str, Any]] = []
+        jobs: list[tuple[int, str, str]] = []
 
         for match in matches:
             match_id = _id(match)
             if match_id is None:
                 counts["skipped"] += 1
                 continue
-
-            calls = []
             if not args.no_boxscores:
-                calls.append(("boxscores", lambda mid=match_id: client.boxscore(args.season, mid), "boxscore_files"))
+                jobs.append((match_id, "boxscores", "boxscore_files"))
             if args.with_pbp:
-                calls.append(("play_by_play", lambda mid=match_id: client.play_by_play(mid), "play_by_play_files"))
+                jobs.append((match_id, "play_by_play", "play_by_play_files"))
             if args.with_shots:
-                calls.append(("shots", lambda mid=match_id: client.shots(mid), "shot_files"))
+                jobs.append((match_id, "shots", "shot_files"))
             if args.with_advanced:
-                calls.append(("advanced", lambda mid=match_id: client.advanced_stats(mid), "advanced_files"))
+                jobs.append((match_id, "advanced", "advanced_files"))
 
-            for folder, fetcher, counter in calls:
+        def fetch_one(job: tuple[int, str, str]) -> tuple[int, str, str, Any]:
+            match_id, folder, counter = job
+            target = out / folder / f"{match_id}.json"
+            if target.exists() and target.stat().st_size > 20:
+                return match_id, folder, counter, None
+            if folder == "boxscores":
+                payload = client.boxscore(args.season, match_id)
+            elif folder == "play_by_play":
+                payload = client.play_by_play(match_id)
+            elif folder == "shots":
+                payload = client.shots(match_id)
+            elif folder == "advanced":
+                payload = client.advanced_stats(match_id)
+            else:
+                raise ValueError(f"Unknown ACB endpoint folder: {folder}")
+            return match_id, folder, counter, payload
+
+        total_jobs = len(jobs)
+        completed_jobs = 0
+        workers = max(1, min(args.workers, 10))
+        print(f"ACB: {len(matches)} matches, {total_jobs} endpoint jobs, workers={workers}", flush=True)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_map = {pool.submit(fetch_one, job): job for job in jobs}
+            for future in as_completed(future_map):
+                match_id, folder, counter = future_map[future]
                 try:
-                    payload = fetcher()
-                except (ACBAPIError, ValueError) as exc:
+                    _, _, _, payload = future.result()
+                    target = out / folder / f"{match_id}.json"
+                    if payload is not None:
+                        _write(target, payload)
+                    if target.exists():
+                        counts[counter] += 1
+                except (ACBAPIError, ValueError, OSError) as exc:
                     endpoint_errors.append({
                         "match_id": match_id,
                         "endpoint": folder,
                         "error": str(exc),
                     })
-                    continue
-                _write(out / folder / f"{match_id}.json", payload)
-                counts[counter] += 1
+                completed_jobs += 1
+                if completed_jobs % 50 == 0 or completed_jobs == total_jobs:
+                    print(
+                        f"ACB progress: {completed_jobs}/{total_jobs} endpoint jobs; errors={len(endpoint_errors)}",
+                        flush=True,
+                    )
 
         summary = {
             "season": args.season,
