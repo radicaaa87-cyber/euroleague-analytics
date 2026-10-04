@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.6 — EuroLeague + ACB
+# Unified Player Points MODEL 0.7 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-04
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTES → ATT RANGE → 2PA / 3PA / FTA → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -435,6 +435,177 @@ Project:
 
 Do not reduce a player to one average such as “6.5 FGA”.  
 Use a realistic conditional range, e.g. 6–10 FGA, and identify what pushes him toward each end.
+
+
+
+## MINUTE AND ATTEMPT DISTRIBUTION ENGINE
+
+The model must not treat minutes or attempts as single fixed values.
+
+Instead of outputting only:
+
+- MIN = 24.0
+- FGA = 7.2
+
+the model must output a distribution for both.
+
+### MINUTE DISTRIBUTION
+
+For every candidate estimate:
+
+- **MIN mean**
+- **MIN median**
+- **normal MIN range** (preferred 50–70% interval)
+- **wide MIN range** (preferred 80–90% interval)
+- LOW / BASE / HIGH minute scenarios
+
+Example:
+
+- MIN mean: 24.5
+- normal range: 21–27
+- wide range: 17–30
+
+If actual minutes fall inside the modeled wide range, that is not automatically a minute-model miss.
+
+If actual minutes fall outside the wide range and there was no unforeseeable event such as injury, foul trouble or blowout, classify it as a structural MIN miss.
+
+### FGA/MIN DISTRIBUTION
+
+Shot volume per minute must also be modeled as a distribution.
+
+For each candidate estimate:
+
+- **FGA/min mean**
+- **FGA/min median**
+- **FGA/min volatility**
+- LOW / BASE / HIGH usage-rate scenarios
+
+Do not assume that a player with stable minutes has stable shot volume.
+
+Example historical FGA sequence:
+
+4, 8, 5, 9, 3, 7
+
+A mean near 6 does not justify treating 6 as a precise forecast.
+
+The model must preserve the observed spread and explain whether high-usage games are linked to:
+
+- specific absences,
+- certain lineups,
+- starting role,
+- ball-handling responsibility,
+- opponent scheme,
+- game pace,
+- or random usage variance.
+
+### TOTAL FGA DISTRIBUTION
+
+Total projected FGA is generated from the joint minute and usage-rate distributions:
+
+**FGA = MIN × FGA/min**
+
+Required output:
+
+- FGA mean
+- FGA median
+- normal range
+- wide range
+- probability of HIGH-volume threshold
+- probability of LOW-volume threshold
+
+Example:
+
+- FGA mean = 5.8
+- normal range = 4–7
+- wide range = 3–9
+- P(FGA >= 9) = 11%
+
+Do the same separately for:
+
+- 2PA
+- 3PA
+- FTA
+
+### ATT TAIL PROBABILITY
+
+The model must explicitly track the probability of unusually high or low volume.
+
+Examples:
+
+- P(FGA >= 10)
+- P(3PA >= 7)
+- P(FTA >= 6)
+
+A bet should not be rejected simply because a tail outcome is possible.  
+But the price and edge must be large enough to compensate for that tail risk.
+
+### MODEL MISS VS NORMAL VARIANCE RULE
+
+After the game, classify the attempt outcome objectively.
+
+#### NORMAL ATT VARIANCE
+
+If actual MIN and ATT fall inside the model's wide pre-game distribution, the process is considered acceptable even if the points bet loses.
+
+Example:
+
+- projected FGA mean 6
+- wide range 3–9
+- actual FGA 9
+
+This is high-end variance, not automatically a model miss.
+
+#### TRUE ATT MODEL MISS
+
+If actual ATT falls materially outside the pre-game wide distribution, investigate whether:
+
+- role changed,
+- beneficiary was identified incorrectly,
+- usage redistribution was missed,
+- matchup effect was missed,
+- minute projection caused the error.
+
+Example:
+
+- projected FGA mean 5
+- wide range 3–7
+- actual FGA 11
+
+This is a true usage/ATT miss unless driven by an unforeseeable in-game event.
+
+### DECOMPOSITION OF ATT ERROR
+
+For every post-game audit, split FGA error into:
+
+1. **MIN error**
+2. **FGA/min error**
+
+Approximation:
+
+**FGA error = minute effect + usage-rate effect**
+
+This allows the model to distinguish:
+
+- correct usage, wrong minutes,
+- correct minutes, wrong usage,
+- both wrong,
+- neither wrong but efficiency decided the bet.
+
+### PROJECTION OUTPUT REQUIREMENT
+
+Every serious candidate must include:
+
+- MIN mean + range
+- FGA mean + range
+- 3PA mean + range
+- FTA mean + range
+- LOW / BASE / HIGH PTS scenario
+- probability OVER / UNDER
+- role confidence
+- variance confidence
+
+Single-point attempt projections are no longer sufficient for A BET classification.
+
 
 ## 6. VARIANCE MODULE
 
