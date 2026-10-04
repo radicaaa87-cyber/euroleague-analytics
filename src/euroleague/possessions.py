@@ -42,6 +42,7 @@ EVENT_ROLES = {
     "CCH": EventRole.NO_BALL,
     "OF": EventRole.NO_BALL,
     "CMU": EventRole.NO_BALL,
+    "CMU D": EventRole.NO_BALL,
     "CMT": EventRole.NO_BALL,
     "C": EventRole.NO_BALL,
     "B": EventRole.NO_BALL,
@@ -61,7 +62,7 @@ EVENT_ROLES = {
 }
 
 BALL_TOUCHING_TYPES = frozenset({"2FGM", "3FGM", "TO", "D", "2FGA", "3FGA", "O", "FTM", "FTA"})
-POSSESSION_RETAINING_FOUL_TYPES = frozenset({"CMT", "C", "B", "CMU"})
+POSSESSION_RETAINING_FOUL_TYPES = frozenset({"CMT", "C", "B", "CMU", "CMU D"})
 
 
 class UnclassifiedEventTypeError(ValueError):
