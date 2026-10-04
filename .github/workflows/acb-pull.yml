@@ -18,6 +18,9 @@ on:
     paths:
       - ".github/acb-run-trigger.txt"
 
+permissions:
+  contents: read
+
 jobs:
   pull-acb:
     runs-on: ubuntu-latest
@@ -26,16 +29,22 @@ jobs:
       ACB_API_KEY: ${{ secrets.ACB_API_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
       - name: Resolve season
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WITH_PBP: ${{ inputs.with_pbp }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "ACB_SEASON=${{ inputs.season }}" >> "$GITHUB_ENV"
-            echo "ACB_WITH_PBP=${{ inputs.with_pbp }}" >> "$GITHUB_ENV"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "ACB_SEASON=$INPUT_SEASON" >> "$GITHUB_ENV"
+            echo "ACB_WITH_PBP=$INPUT_WITH_PBP" >> "$GITHUB_ENV"
           else
             SEASON=$(sed -n 's/^season=//p' .github/acb-run-trigger.txt | tail -n1)
             WITH_PBP=$(sed -n 's/^with_pbp=//p' .github/acb-run-trigger.txt | tail -n1)
@@ -64,13 +73,13 @@ jobs:
           fi
       - name: Build player game logs
         run: python scripts/build_acb_player_game_logs.py --season "$ACB_SEASON"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: acb-raw-${{ env.ACB_SEASON }}
           path: data/acb_raw/${{ env.ACB_SEASON }}
           retention-days: 30
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: acb-player-game-logs-${{ env.ACB_SEASON }}
           path: data/acb_processed/${{ env.ACB_SEASON }}/player_game_logs.csv
