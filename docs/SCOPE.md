@@ -15,7 +15,7 @@ league already publishes is not derived.
 
 ## What version 1 does
 
-Fourteen read-only tools, served identically over stdio and HTTP. Every response
+17 read-only tools, served identically over stdio and HTTP. Every response
 states its data coverage, the games it excludes, and whether a minute figure is
 raw or corrected.
 
@@ -35,6 +35,9 @@ raw or corrected.
 | `el_get_fouls` | Fouls committed and drawn by type, per player, team or game; reconciles to the box score. |
 | `el_get_referee_stats` | A referee's season: games worked, fouls per game, home-win rate, pace; unpivoted from the schedule's officiating crew. |
 | `el_get_roster` | A team's roster with biography (jersey, position, height, weight, birth date, country), linked to the box-score player by observed stat lines, never by name. |
+| `el_acb_find_games` | Liga Endesa games for an ACB season, optionally filtered by team or date. |
+| `el_acb_get_player_games` | One Liga Endesa player's game-by-game source box score, including minutes and shot volume. |
+| `el_acb_get_play_by_play` | One Liga Endesa match's source-order event stream by ACB match id. |
 
 Under the tools, the warehouse: three v1 game endpoints (`Boxscore`,
 `PlaybyPlay`, `Points`) and one v2 endpoint (the per-season people list, for
