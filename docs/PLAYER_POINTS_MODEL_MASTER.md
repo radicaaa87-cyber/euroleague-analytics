@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.5 — EuroLeague + ACB
+# Unified Player Points MODEL 0.6 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-04
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROLE → AVAILABILITY / INJURY IMPACT → MINUTE / USAGE REDISTRIBUTION MAP → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTES → ATT RANGE → 2PA / 3PA / FTA → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → CONFIDENCE → BET / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTES → ATT RANGE → 2PA / 3PA / FTA → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -190,6 +190,206 @@ After the game, classify every availability-related error separately:
 - **random realization only**
 
 This prevents the model from changing the wrong layer after one result.
+
+
+
+
+## ROTATION STATE / CONTEXT-CONDITIONED ROLE ENGINE
+
+Before using season, L10, L5 or L3 averages, build the **expected rotation state for today's game**.
+
+The rotation state must record:
+
+- confirmed OUT players,
+- confirmed IN players,
+- players returning from injury,
+- known or suspected minutes restrictions,
+- projected starters,
+- primary and secondary ball-handlers,
+- available frontcourt / backcourt depth,
+- recent coach rotation pattern,
+- any player whose role materially changed in the last few games.
+
+This rotation state is the context in which all player projections are interpreted.
+
+### ROTATION FINGERPRINT
+
+For each candidate, search historical games by similarity to today's rotation state.
+
+Priority:
+
+1. **Exact-state sample** — same important absences / returns and same role structure.
+2. **Primary-role sample** — same key creator, scorer or positional absence.
+3. **Comparable-role sample** — player had a similar minute and usage role even if the exact teammates differed.
+4. Generic season / L10 / L5 / L3 only after the conditional samples above.
+
+A generic average must never override a strong same-state sample.
+
+If only 1–2 comparable games exist, treat them as evidence, not certainty.
+
+## CONDITIONAL ROLE SAMPLE
+
+Do not assume that an absent player's production transfers to the most obvious teammate.
+
+For every availability change, answer separately:
+
+1. **Who inherits the minutes?**
+2. **Who inherits the ball-handling / creation?**
+3. **Who inherits the field-goal attempts?**
+4. **Who inherits the three-point attempts?**
+5. **Who inherits the free-throw pressure / rim attacks?**
+
+These may be different players.
+
+Example:
+
+- Player A OUT
+- Player B gains +7 minutes
+- Player C gains +4 FGA
+- Player D becomes secondary creator
+
+The model must not give B all of A's usage simply because B gained the most minutes.
+
+## MINUTE REDISTRIBUTION
+
+Minute redistribution must respect the team rotation as a constrained system.
+
+Rules:
+
+- team regulation minutes sum to 200,
+- added minutes for one player imply reduced minutes somewhere else,
+- returning players reclaim minutes from current rotation members,
+- first-game-back players use a restricted/full-role scenario unless the coach confirms otherwise,
+- projected starters and first substitutes are weighted above generic positional substitutes.
+
+For each relevant player estimate:
+
+- base MIN,
+- conditional MIN with today's rotation,
+- LOW / BASE / HIGH MIN,
+- source of the minute change.
+
+Do not apply a minute boost unless there is evidence of who actually replaces the absent player.
+
+## USAGE / ATT REDISTRIBUTION
+
+Minutes and shot volume are modeled independently.
+
+For each candidate estimate today's conditional:
+
+- FGA per minute,
+- 3PA per minute,
+- FTA per minute,
+- usage / creation responsibility where available.
+
+A player can gain minutes without gaining shots.
+A player can keep the same minutes and gain major usage.
+A player can lose usage even if minutes remain stable when a high-usage teammate returns.
+
+Use same-state and same-role games to estimate these changes.
+
+## BENEFICIARY PROOF RULE
+
+An injury / absence / return may strengthen a BET only when at least one of the following is true:
+
+- repeated comparable games show the same beneficiary pattern,
+- substitution / lineup history clearly identifies the replacement,
+- coach information explicitly defines the new role,
+- the recent role has already changed and the player is demonstrably receiving the added MIN / FGA / 3PA / FTA.
+
+If none is true:
+
+- do not manufacture a projection boost,
+- widen the distribution,
+- lower role confidence,
+- classify the signal as WATCH or NO BET unless the normal-role edge remains strong independently.
+
+## RETURNER SUPPRESSION RULE
+
+When an important player returns:
+
+- identify whose minutes he is likely to reclaim,
+- identify whose usage / attempts he is likely to reduce,
+- do not simply mark the whole team as more uncertain.
+
+If the returning player's expected role is unclear, run at least two scenarios:
+
+- restricted return,
+- normal return.
+
+The final probability is a mixture of those scenarios, not a single deterministic projection.
+
+## INFORMATION-TO-NUMBER RULE
+
+Every material pre-game information item used by the model must end in a numeric or categorical impact.
+
+Required output:
+
+- information item,
+- affected player(s),
+- ΔMIN,
+- ΔFGA,
+- Δ3PA,
+- ΔFTA,
+- role direction: UP / DOWN / NEUTRAL,
+- confidence: HIGH / MEDIUM / LOW,
+- evidence source type: exact-state / comparable-role / coach / lineup / generic assumption.
+
+If a news item cannot be translated into one of these effects, it may be noted but must not change the projection.
+
+## A BET / WATCH / NO BET
+
+### A BET
+Use for real selection only when:
+
+- edge is sufficient under the existing price rules,
+- no unresolved critical rotation ambiguity exists,
+- MIN and ATT paths are supported,
+- availability effects are either stable or supported by conditional evidence,
+- variance is understood well enough for the offered price.
+
+### WATCH
+A statistically attractive situation with one unresolved structural question, for example:
+
+- unclear beneficiary of an absence,
+- first game after a return,
+- uncertain minutes restriction,
+- conflicting rotation evidence,
+- very small conditional sample.
+
+WATCH is tracked for research but is **not counted as a betting selection**.
+
+### NO BET
+No sufficient edge or too much unresolved uncertainty.
+
+This prevents a large mathematical edge from overriding a weak role assumption.
+
+## PRE-GAME LOCK / NO-LEAKAGE RULE
+
+For historical simulation, every injury, status, lineup and coach-information input must have been publicly available before the betting decision time.
+
+Do not use:
+
+- final starting lineup if it was announced after the simulated decision point,
+- post-game explanations,
+- in-game rotation information,
+- the final box score.
+
+The exact information cutoff must be stored with the prediction.
+
+## LESSON FROM R31 2026 TEST
+
+The R31 simulation showed that strong mathematical edges failed when the model selected the wrong beneficiary or assumed the wrong role path.
+
+Examples of failure types included:
+
+- expected usage beneficiary was not the actual beneficiary,
+- returners reclaimed more minutes than modeled,
+- player gained minutes but not attempts,
+- player retained minutes but lost usage,
+- large edge was driven by a fragile role assumption.
+
+Therefore availability information is useful only after it is translated through the rotation-state and beneficiary logic above.
 
 
 ## 3. ROLE CONFIDENCE
