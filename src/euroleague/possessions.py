@@ -44,6 +44,7 @@ EVENT_ROLES = {
     "CMU": EventRole.NO_BALL,
    "CMU_D": EventRole.NO_BALL,
     "CMU_DI": EventRole.NO_BALL,
+    "CMU_FL": EventRole.NO_BALL,
     "CMT": EventRole.NO_BALL,
     "CMT1": EventRole.NO_BALL,
     "C": EventRole.NO_BALL,
@@ -65,9 +66,8 @@ EVENT_ROLES = {
 
 BALL_TOUCHING_TYPES = frozenset({"2FGM", "3FGM", "TO", "D", "2FGA", "3FGA", "O", "FTM", "FTA"})
 POSSESSION_RETAINING_FOUL_TYPES = frozenset(
-    {"CMT", "C", "B", "CMU", "CMU_D", "CMU_DI", "CMT1"}
+    {"CMT", "C", "B", "CMU", "CMU_D", "CMU_DI", "CMT1", "CMU_FL"}
 )
-
 
 class UnclassifiedEventTypeError(ValueError):
     """Raised rather than silently ignoring an event outside the vocabulary."""
