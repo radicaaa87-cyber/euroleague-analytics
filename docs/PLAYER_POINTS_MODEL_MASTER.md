@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.8 — EuroLeague + ACB
+# Unified Player Points MODEL 0.9 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-05
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → STATE-FIRST BASELINE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → TEAM CONSTRAINTS → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE DRIVER ATTRIBUTION → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → SCENARIO MIXTURE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → SENSITIVITY / ROBUSTNESS → CALIBRATION → EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -605,6 +605,11 @@ Every serious candidate must include:
 - probability OVER / UNDER
 - role confidence
 - variance confidence
+- ATT volatility
+- variance explained score
+- today's trigger + trigger confidence
+- scenario mixture when a material branch exists
+- BET ROBUSTNESS SCORE
 
 Single-point attempt projections are no longer sufficient for A BET classification.
 
@@ -800,6 +805,317 @@ After the result, classify:
 - **true role / MIN / ATT model miss**
 
 Post-game audit must not alter the locked pre-game classification.
+
+
+
+
+## MODEL 0.9 — STATE-FIRST, SCENARIO MIXTURE AND ROBUSTNESS LAYER
+
+MODEL 0.9 does not change the objective of the model. It changes how uncertainty is handled before a bet is selected.
+
+The central idea is:
+
+> Do not ask only whether the central projection has edge. Ask whether the edge survives the realistic pre-game states that could occur.
+
+### STATE-FIRST BASELINE
+
+Before season/L10/L5/L3 weighting, define the most likely basketball state for today's game.
+
+The state must include, where relevant:
+
+- active roster,
+- confirmed OUT / IN,
+- returners and restrictions,
+- starter / bench role,
+- primary and secondary ball-handlers,
+- expected first substitutes,
+- available frontcourt / backcourt depth,
+- recent coach rotation,
+- likely pace environment,
+- opponent scheme relevant to the player's shot profile.
+
+The baseline projection should come from the historical sample most similar to that state.
+
+Generic L10/L5/L3 is a fallback, not the first answer.
+
+When a strong exact-state or comparable-state sample exists, it should dominate generic recency averages.
+
+### VARIANCE DRIVER ATTRIBUTION
+
+For every player with MEDIUM or HIGH ATT volatility, the model must try to explain the movement in MIN, FGA/min, 3PA/min and FTA/min.
+
+Candidate drivers include:
+
+- minutes,
+- starter / bench state,
+- specific teammate OUT / IN,
+- primary creator OUT / IN,
+- secondary creator role,
+- lineup composition,
+- pace,
+- opponent shot profile allowed,
+- rim-protection / foul environment,
+- score-state / blowout sensitivity,
+- coach rotation change.
+
+For each driver record:
+
+- direction of effect,
+- approximate magnitude,
+- sample size,
+- repeatability,
+- evidence quality,
+- whether the driver is known pre-game.
+
+Do not call variance "explained" because a plausible story exists.
+It is explained only when a repeatable pre-game relationship is supported by historical evidence.
+
+The explained-variance score should reflect how much of the meaningful attempt movement can be attributed to these repeatable drivers.
+
+### CONDITIONAL STATE DISTRIBUTIONS
+
+When the driver is known, build separate distributions by state instead of one wide unconditional distribution.
+
+Examples:
+
+- creator IN vs creator OUT,
+- starter vs bench,
+- returner restricted vs full role,
+- short rotation vs normal rotation.
+
+For each state, estimate:
+
+- MIN distribution,
+- FGA/min distribution,
+- FGA distribution,
+- 3PA distribution,
+- FTA distribution,
+- PTS distribution.
+
+This prevents structured volatility from being treated as random volatility.
+
+### SCENARIO MIXTURE ENGINE
+
+When today's state is not fully certain, use a weighted mixture of plausible pre-game scenarios.
+
+Example:
+
+- 55% normal-return scenario,
+- 30% restricted-return scenario,
+- 15% no-return / late scratch scenario.
+
+For each scenario calculate its own MIN / ATT / PTS distribution and OVER / UNDER probability.
+
+Final probability:
+
+**P(final side) = Σ scenario_weight × P(side | scenario)**
+
+Scenario weights must be based on pre-game evidence.
+If reliable weights cannot be justified, do not invent precise percentages; lower confidence and cap the signal at WATCH.
+
+A single deterministic projection is forbidden when there is a material unresolved state branch.
+
+### TEAM CONSTRAINT ENGINE
+
+Player projections must reconcile with the team as a system.
+
+#### Minute constraint
+
+For each regulation scenario:
+
+**Σ player MIN = 200**
+
+If Player A gains minutes, the model must identify which player(s) lose them.
+
+#### Attempt-share constraint
+
+Projected player FGA, 3PA and FTA must be jointly plausible relative to the team's expected pace and team attempt distributions.
+
+Do not force team FGA to an exact fixed number, because turnovers, offensive rebounds and free throws alter possession usage.
+
+Instead:
+
+- project a plausible team FGA / 3PA / FTA range,
+- ensure summed player distributions are compatible with that range,
+- prevent multiple players from receiving the same absent player's usage,
+- record where redistributed FGA / 3PA / FTA came from.
+
+A role boost is invalid if the team-level redistribution cannot be reconciled.
+
+### SENSITIVITY TEST
+
+Every A BET candidate must be stress-tested before classification.
+
+Perturb only pre-game uncertain inputs, such as:
+
+- MIN within realistic LOW / BASE / HIGH bounds,
+- FGA/min within the relevant conditional range,
+- returner state,
+- beneficiary split,
+- pace within a realistic range,
+- matchup adjustment within its uncertainty band.
+
+For each plausible scenario recalculate:
+
+- P(OVER),
+- P(UNDER),
+- expected value at the offered price.
+
+Do not stress-test using impossible combinations that violate the rotation or team constraints.
+
+### BET ROBUSTNESS SCORE
+
+Define:
+
+**BET ROBUSTNESS SCORE = 100 × weighted probability mass of plausible pre-game scenarios in which the selected side remains +EV at the offered price.**
+
+This is not the same as the probability that the bet wins.
+
+It answers:
+
+> How dependent is the bet on one fragile assumption?
+
+Provisional interpretation:
+
+- **75–100 = robust**
+- **55–74 = fragile / WATCH zone**
+- **0–54 = not robust enough for A BET**
+
+These bands are provisional and must be calibrated on future blind backtests rather than tuned to one slate.
+
+### ROBUSTNESS HARD RULES
+
+A candidate cannot be A BET when:
+
+- HIGH unexplained ATT volatility is present,
+- one unresolved scenario carrying >=25% plausible pre-game probability reverses the bet to negative EV,
+- the projection depends on an unsupported beneficiary assumption,
+- the team-level MIN or usage redistribution cannot be reconciled,
+- the scenario weights are too uncertain to defend.
+
+A candidate with high volatility may still be A BET when:
+
+- variance is highly explained,
+- today's trigger is confirmed,
+- the relevant conditional distribution is stable,
+- the bet remains +EV across the realistic scenario mixture.
+
+### A BET / WATCH / NO BET — MODEL 0.9 SELECTION
+
+#### A BET
+
+Requires all of the following:
+
+- sufficient market edge,
+- supported role and rotation state,
+- supported MIN path,
+- supported ATT path,
+- no HIGH unexplained ATT volatility,
+- team constraints reconciled,
+- material scenario branches modeled,
+- BET ROBUSTNESS SCORE >= 75,
+- no hard-gate violation.
+
+#### WATCH
+
+Use when the statistical signal is interesting but one material issue remains:
+
+- robustness 55–74,
+- medium explained volatility,
+- unresolved state branch,
+- small conditional sample,
+- uncertain beneficiary split,
+- uncertain return restriction,
+- scenario weights not strong enough for A BET.
+
+#### NO BET
+
+Use when:
+
+- insufficient edge,
+- robustness <55,
+- hard-gate violation,
+- unresolved HIGH unexplained volatility,
+- role / MIN / ATT path is not defensible.
+
+Large raw edge never overrides a hard gate.
+
+### CALIBRATION LAYER
+
+The model's ranges and probabilities must be tested empirically.
+
+Track separately by EuroLeague and ACB, and where sample permits by role class.
+
+#### Interval calibration
+
+If a range is labeled 80% or 90%, actual outcomes should fall inside it approximately that often over a sufficiently large blind sample.
+
+Track coverage for:
+
+- MIN,
+- FGA,
+- 3PA,
+- FTA,
+- PTS.
+
+If a nominal 90% interval covers only 65%, it is too narrow.
+If it covers 99%, it is likely too wide to be informative.
+
+Do not recalibrate after one slate.
+
+#### Probability calibration
+
+For predicted OVER / UNDER probabilities, track:
+
+- reliability bins,
+- Brier score,
+- log loss,
+- observed hit rate by probability bucket.
+
+Example:
+
+Predictions labeled 65% should win roughly 65% over a sufficiently large sample.
+
+#### Selection calibration
+
+Track separately:
+
+- A BET,
+- WATCH,
+- NO BET / control.
+
+The model is successful only if, over independent blind samples, A BET separates meaningfully from WATCH and control in both hit rate and expected-value performance.
+
+### ERROR TAXONOMY
+
+Every post-game miss must be assigned first to one primary layer:
+
+1. **STATE / ROLE MISS**
+2. **MIN MISS**
+3. **ATT-RATE MISS**
+4. **EFFICIENCY / REALIZATION VARIANCE**
+5. **UNFORESEEABLE IN-GAME EVENT**
+
+Secondary labels may be added, but one primary source is required.
+
+A winning bet can still receive a process-miss label.
+A losing bet can still receive a process-correct / realization-variance label.
+
+Betting result and process result must remain separate.
+
+### CHANGE-CONTROL RULE
+
+Do not change model rules because one player or one slate lost.
+
+Promote a new rule only when:
+
+- the same failure mode repeats across multiple independent blind simulations,
+- the change can be defined using only pre-game information,
+- the proposed change is tested on data not used to invent it.
+
+WATCH success after results must never be retroactively converted into A BET success.
+
+MODEL 0.9 is therefore a stricter selection layer, not a post-result explanation engine.
 
 
 ## 6. VARIANCE MODULE
