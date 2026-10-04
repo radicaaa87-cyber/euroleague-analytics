@@ -30,9 +30,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "el_get_fouls",
     "el_get_referee_stats",
     "el_get_roster",
-    "acb_find_games",
-    "acb_get_player_games",
-    "acb_get_play_by_play",
+    "el_acb_find_games",
+    "el_acb_get_player_games",
+    "el_acb_get_play_by_play",
 )
 
 _INCLUDE_QUARANTINED = {
@@ -51,6 +51,13 @@ _SEASON = {
         "Season code such as E2024. E<YYYY> identifies the season ending in spring <YYYY> "
         "(for example, E2024 is the 2023-24 season). Call el_describe_warehouse to see "
         "which seasons are loaded."
+    ),
+}
+
+_ACB_SEASON = {
+    "type": "string",
+    "description": (
+        "ACB season such as 2025-26, meaning the season ending in spring 2026."
     ),
 }
 
@@ -758,17 +765,16 @@ def build_registry(
             query=queries.get_roster,
         ),
         tool(
-            name="acb_find_games",
+            name="el_acb_find_games",
             title="Find ACB Liga Endesa games",
             description=(
                 "Find source-native Liga Endesa games in the ACB warehouse. "
                 "Use season like 2025-26. Only competition_id=1 is included, so Liga U, "
                 "Minicopa, Copa del Rey and Supercopa are excluded from this tool."
             ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "season": {"type": "string", "description": "ACB season such as 2025-26."},
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
                     "team": {"type": "string", "description": "Optional team name substring."},
                     "from_date": {
                         "type": "string",
@@ -778,22 +784,21 @@ def build_registry(
                     "limit": _LIMIT,
                     "offset": _OFFSET,
                 },
-                "required": ["season"],
-            },
+                required=["season"],
+            ),
             query=queries.acb_find_games,
         ),
         tool(
-            name="acb_get_player_games",
+            name="el_acb_get_player_games",
             title="ACB player game logs",
             description=(
                 "Get one player game-by-game Liga Endesa box score: play time, points, "
                 "2P/3P/FT makes and attempts, total field-goal attempts, rebounds, assists, "
                 "steals, turnovers, blocks, fouls, plus-minus and valuation."
             ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "season": {"type": "string", "description": "ACB season such as 2025-26."},
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
                     "player": {
                         "type": "string",
                         "description": "ACB source player id or player name.",
@@ -802,24 +807,23 @@ def build_registry(
                     "limit": _LIMIT,
                     "offset": _OFFSET,
                 },
-                "required": ["season", "player"],
-            },
+                required=["season", "player"],
+            ),
             query=queries.acb_get_player_games,
         ),
         tool(
-            name="acb_get_play_by_play",
+            name="el_acb_get_play_by_play",
             title="ACB game play-by-play",
             description=(
                 "Get source-order play-by-play for one Liga Endesa match. Use match_id "
-                "from acb_find_games. Returns ACB event type, player id, quarter, clock and score."
+                "from el_acb_find_games. Returns ACB event type, player id, quarter, clock and score."
             ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "season": {"type": "string", "description": "ACB season such as 2025-26."},
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
                     "match_id": {
                         "type": "string",
-                        "description": "ACB match id from acb_find_games.",
+                        "description": "ACB match id from el_acb_find_games.",
                     },
                     "quarter": {"type": "integer", "description": "Optional quarter filter."},
                     "event_kind": {"type": "string", "description": "Optional ACB event kind."},
@@ -827,8 +831,8 @@ def build_registry(
                     "limit": _LIMIT,
                     "offset": _OFFSET,
                 },
-                "required": ["season", "match_id"],
-            },
+                required=["season", "match_id"],
+            ),
             query=queries.acb_get_play_by_play,
         ),
     ]
