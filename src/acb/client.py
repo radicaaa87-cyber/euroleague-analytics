@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 import requests
@@ -35,23 +36,52 @@ class ACBClient:
         return key
 
     def _get(self, base: str, path: str, params: dict[str, Any] | None = None) -> Any:
-        r = requests.get(
-            f"{base}/{path.lstrip('/')}",
-            params=params or {},
-            headers={
-                "X-Apikey": self._key(),
-                "Accept": "application/json",
-                "Referer": "https://live.acb.com/",
-                "Origin": "https://live.acb.com",
-                "User-Agent": "euroleague-analytics-acb/2.0",
-            },
-            timeout=self.timeout,
-        )
-        if r.status_code == 400:
-            raise ValueError(r.text[:500])
-        if r.status_code != 200:
+        url = f"{base}/{path.lstrip('/')}"
+        headers = {
+            "X-Apikey": self._key(),
+            "Accept": "application/json",
+            "Referer": "https://live.acb.com/",
+            "Origin": "https://live.acb.com",
+            "User-Agent": "euroleague-analytics-acb/2.1",
+        }
+
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                r = requests.get(
+                    url,
+                    params=params or {},
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt < 4:
+                    time.sleep(min(2 ** attempt, 8))
+                    continue
+                raise ACBAPIError(f"ACB API request failed after retries: {exc}") from exc
+
+            if r.status_code == 400:
+                raise ValueError(r.text[:500])
+            if r.status_code == 200:
+                return r.json()
+
+            if r.status_code == 429 or 500 <= r.status_code <= 599:
+                last_error = ACBAPIError(
+                    f"ACB API HTTP {r.status_code}: {r.text[:500]}"
+                )
+                if attempt < 4:
+                    retry_after = r.headers.get("Retry-After")
+                    try:
+                        wait = float(retry_after) if retry_after else min(2 ** attempt, 8)
+                    except ValueError:
+                        wait = min(2 ** attempt, 8)
+                    time.sleep(wait)
+                    continue
+
             raise ACBAPIError(f"ACB API HTTP {r.status_code}: {r.text[:500]}")
-        return r.json()
+
+        raise ACBAPIError(f"ACB API failed after retries: {last_error}")
 
     @staticmethod
     def edition_id(season: str) -> int:
