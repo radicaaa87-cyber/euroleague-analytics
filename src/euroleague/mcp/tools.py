@@ -816,7 +816,8 @@ def build_registry(
             title="ACB game play-by-play",
             description=(
                 "Get source-order play-by-play for one Liga Endesa match. Use match_id "
-                "from el_acb_find_games. Returns ACB event type, player id, quarter, clock and score."
+                "from el_acb_find_games. Returns ACB event type, player id, quarter, "
+                "clock and score."
             ),
             input_schema=_schema(
                 {
