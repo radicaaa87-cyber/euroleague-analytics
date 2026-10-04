@@ -20,9 +20,9 @@ def registry():
     return build_registry(_null_runner)
 
 
-def test_fourteen_tools_are_declared():
-    assert len(TOOL_NAMES) == 14
-    assert len(set(TOOL_NAMES)) == 14
+def test_seventeen_tools_are_declared():
+    assert len(TOOL_NAMES) == 17
+    assert len(set(TOOL_NAMES)) == 17
 
 
 def test_every_declared_name_starts_with_the_project_prefix():
