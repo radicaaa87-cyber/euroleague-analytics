@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.4 — EuroLeague + ACB
+# Unified Player Points MODEL 0.5 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-04
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROLE → AVAILABILITY / ROTATION IMPACT → ROLE CONFIDENCE → MINUTES → ATT RANGE → 2PA / 3PA / FTA → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → CONFIDENCE → BET / NO BET**
+**ROLE → AVAILABILITY / INJURY IMPACT → MINUTE / USAGE REDISTRIBUTION MAP → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTES → ATT RANGE → 2PA / 3PA / FTA → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → CONFIDENCE → BET / NO BET**
 
 ## 1. ROLE
 
@@ -104,6 +104,93 @@ Use, in order:
 5. generic positional assumptions only as a last resort.
 
 If the expected redistribution cannot be supported, widen the distribution and lower confidence instead of inventing a role shift.
+
+
+
+## MINUTE / USAGE REDISTRIBUTION MAP
+
+When a player is OUT, returning, limited, suspended, rested or changes role, do **not** distribute his minutes and attempts evenly across teammates.
+
+The model must identify the likely first, second and third beneficiaries or losers.
+
+For every meaningful availability event, estimate:
+
+- **primary minute beneficiary**
+- **secondary minute beneficiary**
+- **primary usage / FGA beneficiary**
+- **secondary usage / FGA beneficiary**
+- expected change in **MIN**
+- expected change in **FGA**
+- expected change in **3PA**
+- expected change in **FTA**
+- whether the change is direct or indirect
+
+Use evidence in this order:
+
+1. recent games with the same player absent/present,
+2. same-lineup or same-role historical games,
+3. coach statements / expected rotation,
+4. substitution patterns and lineup combinations,
+5. positional depth-chart logic only as a last resort.
+
+A frontcourt absence does **not** mean every big receives the same boost. The model must determine who actually inherits the rotation.
+
+### Redistribution map example
+
+If Player A is OUT:
+
+- Player B: +6 MIN, +3 FGA, primary beneficiary
+- Player C: +2 MIN, +1 FGA, secondary beneficiary
+- Player D: no meaningful change
+
+Only B should receive the full role-adjusted projection boost.
+
+If evidence is weak or beneficiaries are ambiguous, widen the distribution instead of forcing a deterministic redistribution.
+
+## STATUS CONFIDENCE
+
+Every availability or role-change input must receive a confidence label.
+
+### HIGH
+- officially OUT / IN,
+- coach-confirmed role,
+- repeated historical pattern in comparable games,
+- clear first substitute / rotation replacement.
+
+### MEDIUM
+- reliable reporting but no direct coach confirmation,
+- likely active but role/minutes uncertain,
+- limited comparable history.
+
+### LOW
+- game-time decision,
+- unclear minutes restriction,
+- first game back,
+- new signing / debut,
+- unclear rotation,
+- conflicting reports.
+
+STATUS CONFIDENCE directly affects the projection:
+
+- HIGH: apply the modeled MIN/FGA/3PA/FTA shift normally.
+- MEDIUM: apply a smaller shift and widen the distribution.
+- LOW: avoid aggressive role redistribution; widen LOW/HIGH scenarios and require a larger edge for BET.
+
+A player returning from injury is not treated the same as a fully established active player unless minutes and role are confirmed.
+
+## PROCESS AUDIT FOR AVAILABILITY MISSES
+
+After the game, classify every availability-related error separately:
+
+- **correct beneficiary, wrong magnitude**
+- **wrong beneficiary**
+- **status confidence too high**
+- **minutes restriction missed**
+- **usage redistribution missed**
+- **random realization only**
+
+This prevents the model from changing the wrong layer after one result.
+
 
 ## 3. ROLE CONFIDENCE
 
