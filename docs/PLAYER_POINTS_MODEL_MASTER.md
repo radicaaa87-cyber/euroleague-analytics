@@ -1,7 +1,7 @@
-# Unified Player Points MODEL 0.7 — EuroLeague + ACB
+# Unified Player Points MODEL 0.8 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
-Date: 2026-10-04
+Date: 2026-10-05
 
 ## Scope
 
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -346,7 +346,9 @@ Use for real selection only when:
 - no unresolved critical rotation ambiguity exists,
 - MIN and ATT paths are supported,
 - availability effects are either stable or supported by conditional evidence,
-- variance is understood well enough for the offered price.
+- variance is understood well enough for the offered price,
+- HIGH ATT volatility is allowed only when its mechanism is strongly explained and today's trigger is supported,
+- HIGH unexplained ATT volatility is a hard veto regardless of raw edge.
 
 ### WATCH
 A statistically attractive situation with one unresolved structural question, for example:
@@ -607,6 +609,199 @@ Every serious candidate must include:
 Single-point attempt projections are no longer sufficient for A BET classification.
 
 
+
+
+## EXPLAINED VOLATILITY ENGINE
+
+The model must distinguish between **how volatile a player's attempts are** and **how much of that volatility is explainable before the game**.
+
+High volatility by itself is not a reason to reject a player.  
+The key question is whether the model can identify the mechanism that moves the player between LOW, BASE and HIGH attempt states.
+
+For every serious candidate calculate and store three separate labels:
+
+### 1. ATT VOLATILITY
+
+Classify observed attempt volatility as:
+
+- **LOW**
+- **MEDIUM**
+- **HIGH**
+
+Use MIN-adjusted attempt rates, not only raw FGA totals.
+
+Primary inputs:
+
+- FGA/min dispersion,
+- 3PA/min dispersion,
+- FTA/min dispersion,
+- game-to-game tail frequency,
+- difference between normal and wide ATT ranges.
+
+ATT VOLATILITY answers only:
+
+> How much does the player's shot volume move?
+
+It does **not** answer whether that movement is predictable.
+
+### 2. VARIANCE EXPLAINED SCORE
+
+Estimate what percentage of the important ATT variance can be linked to identifiable pre-game conditions.
+
+Store:
+
+- **0–39% = LOW explained**
+- **40–69% = MEDIUM explained**
+- **70–100% = HIGH explained**
+
+Evidence that can explain variance includes:
+
+- teammate absence / return,
+- starter vs bench role,
+- primary or secondary ball-handling role,
+- exact or comparable lineup state,
+- specific substitution pattern,
+- clear minute redistribution,
+- pace environment,
+- opponent scheme,
+- positional matchup,
+- rim-protection / foul environment,
+- coach-confirmed role change.
+
+Do not assign explained variance after seeing the result.
+
+The relationship must be supported by **pre-game historical evidence**.
+
+Examples:
+
+- FGA = 4, 5, 4 with primary creator active; 9, 10, 8 when creator OUT  
+  → HIGH ATT volatility, but HIGH explained variance.
+
+- FGA = 3, 11, 5, 9, 4, 10 with no repeatable roster, lineup, matchup or minute pattern  
+  → HIGH ATT volatility and LOW explained variance.
+
+### 3. TODAY TRIGGER CONFIDENCE
+
+For each identified variance mechanism classify whether the trigger is active today:
+
+- **HIGH**
+- **MEDIUM**
+- **LOW / NONE**
+
+HIGH requires strong pre-game support such as:
+
+- official IN / OUT status,
+- coach-confirmed role,
+- repeated same-state pattern,
+- clearly identifiable lineup or replacement structure.
+
+MEDIUM means the mechanism is plausible but incomplete.
+
+LOW / NONE means the model cannot confidently say which ATT state should occur today.
+
+## VOLATILITY DECISION MATRIX
+
+Use the following logic before A BET classification:
+
+### LOW ATT VOLATILITY
+Normal edge rules apply.
+
+### MEDIUM ATT VOLATILITY
+May qualify as A BET when:
+
+- role and minutes are supported,
+- variance is at least moderately explained,
+- the offered edge clears the normal threshold.
+
+### HIGH ATT VOLATILITY + HIGH EXPLAINED + HIGH TODAY TRIGGER
+May qualify as **A BET**.
+
+Do **not** penalize the player simply for having a wide historical range.
+
+If the trigger clearly favors the HIGH or LOW tail and the bookmaker line does not fully reflect it, explained volatility may strengthen the bet.
+
+### HIGH ATT VOLATILITY + MEDIUM EXPLAINED
+Maximum classification is normally **WATCH**.
+
+Exception: A BET is allowed only if the bet remains strong under the player's normal-role/base distribution **without relying on the uncertain trigger**.
+
+### HIGH ATT VOLATILITY + LOW EXPLAINED
+**HARD GATE: cannot be A BET regardless of raw edge.**
+
+Classification:
+
+- WATCH if the market edge is interesting enough to study,
+- otherwise NO BET.
+
+A large mathematical edge must never override unexplained ATT volatility.
+
+## TRIGGER-CONDITIONAL DISTRIBUTION
+
+When volatility is explainable, do not use one unconditional FGA distribution.
+
+Build conditional distributions where sample allows:
+
+- trigger OFF distribution,
+- trigger ON distribution.
+
+Example:
+
+Primary creator IN:
+- FGA mean 5.1
+- wide range 3–7
+
+Primary creator OUT:
+- FGA mean 9.0
+- wide range 7–11
+
+If creator is confirmed OUT today, the model should use the **OUT-state distribution**, not widen one generic 3–11 range and penalize the player for volatility that is actually structured.
+
+The same principle applies to:
+
+- MIN,
+- 3PA,
+- FTA,
+- usage / creation responsibility.
+
+## UNEXPLAINED VARIANCE PENALTY
+
+Unexplained ATT variance should affect **selection**, not merely widen the points distribution.
+
+Rules:
+
+- HIGH unexplained ATT volatility → no A BET.
+- MEDIUM unexplained ATT volatility → higher edge requirement and lower confidence.
+- LOW unexplained ATT volatility → normal selection rules.
+
+This replaces the old approach where sufficiently large edge could compensate for almost any volatility.
+
+## REQUIRED PRE-GAME OUTPUT
+
+For each serious candidate include:
+
+- ATT volatility: LOW / MED / HIGH
+- variance explained: 0–100% + LOW / MED / HIGH
+- today trigger: description
+- today trigger confidence: LOW / MED / HIGH
+- trigger OFF ATT distribution when available
+- trigger ON ATT distribution when available
+- selected distribution used for today's projection
+- whether the bet depends on the trigger
+
+## POST-GAME VARIANCE AUDIT
+
+After the result, classify:
+
+- **mechanism captured, realization variance**
+- **mechanism captured, wrong magnitude**
+- **trigger identified incorrectly**
+- **variance mechanism missing**
+- **unexplained variance occurred**
+- **true role / MIN / ATT model miss**
+
+Post-game audit must not alter the locked pre-game classification.
+
+
 ## 6. VARIANCE MODULE
 
 Large variance is **not automatically a weakness**. It can be an edge if we understand what drives it.
@@ -736,9 +931,9 @@ BET requires alignment of:
 
 If one is weak, prefer NO BET.
 
-High unexplained variance requires a larger edge.
+High unexplained ATT variance is **not solved by asking for a larger edge**. If ATT volatility is HIGH and variance explained is LOW, the candidate cannot be A BET.
 
-Large **explained** variance can create value when today's context clearly activates the favorable scenario.
+Large **explained** variance can create value when today's context clearly activates the favorable scenario. In that case use the trigger-conditional distribution instead of penalizing the player for a wide unconditional historical range.
 
 The model is a **selection model**, not a “predict every player” model. From 20 offered players, 2–3 valid bets can be an excellent output.
 
