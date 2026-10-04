@@ -1,23 +1,33 @@
 """Pull one ACB season from the current live.acb.com API."""
+
 from __future__ import annotations
-import argparse, json, os, sys
+
+import argparse
+import json
+import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from acb.client import ACBAPIError, ACBClient  # noqa: E402
+from acb.client import ACBAPIError, ACBClient
+
 
 def _id(row: dict[str, Any]) -> int | None:
     value = row.get("id") or row.get("idMatch") or row.get("id_match")
     try:
         return int(value) if value is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
+
 
 def _write(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+
 
 def main() -> int:
     p = argparse.ArgumentParser()
@@ -36,7 +46,13 @@ def main() -> int:
     try:
         matches = client.season_matches(args.season)
         _write(out / "matches.json", matches)
-        counts = {"boxscore_files":0,"play_by_play_files":0,"shot_files":0,"advanced_files":0,"skipped":0}
+        counts = {
+            "boxscore_files": 0,
+            "play_by_play_files": 0,
+            "shot_files": 0,
+            "advanced_files": 0,
+            "skipped": 0,
+        }
 
         endpoint_errors: list[dict[str, Any]] = []
         jobs: list[tuple[int, str, str]] = []
@@ -75,7 +91,10 @@ def main() -> int:
         total_jobs = len(jobs)
         completed_jobs = 0
         workers = max(1, min(args.workers, 10))
-        print(f"ACB: {len(matches)} matches, {total_jobs} endpoint jobs, workers={workers}", flush=True)
+        print(
+            f"ACB: {len(matches)} matches, {total_jobs} endpoint jobs, workers={workers}",
+            flush=True,
+        )
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             future_map = {pool.submit(fetch_one, job): job for job in jobs}
@@ -89,11 +108,13 @@ def main() -> int:
                     if target.exists():
                         counts[counter] += 1
                 except (ACBAPIError, ValueError, OSError) as exc:
-                    endpoint_errors.append({
-                        "match_id": match_id,
-                        "endpoint": folder,
-                        "error": str(exc),
-                    })
+                    endpoint_errors.append(
+                        {
+                            "match_id": match_id,
+                            "endpoint": folder,
+                            "error": str(exc),
+                        }
+                    )
                 completed_jobs += 1
                 if completed_jobs % 50 == 0 or completed_jobs == total_jobs:
                     print(
@@ -116,6 +137,7 @@ def main() -> int:
     except (ACBAPIError, ValueError) as exc:
         print(f"ACB pull failed: {exc}", file=sys.stderr)
         return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

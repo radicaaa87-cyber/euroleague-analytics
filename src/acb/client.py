@@ -1,11 +1,13 @@
 """Current ACB / Liga Endesa API client used by live.acb.com."""
 
 from __future__ import annotations
+
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
+
 import requests
 
 SEASONDATA_BASE = "https://api2.acb.com/api/seasondata"
@@ -15,13 +17,23 @@ MAX_CONSECUTIVE_WEEK_GAPS = 80
 MAX_TOTAL_WEEKS_WALKED = 300
 
 SEASON_EDITIONS: dict[str, int] = {
-    "2016-17": 81, "2017-18": 82, "2018-19": 83, "2019-20": 84,
-    "2020-21": 85, "2021-22": 86, "2022-23": 87, "2023-24": 88,
-    "2024-25": 89, "2025-26": 90, "2026-27": 91,
+    "2016-17": 81,
+    "2017-18": 82,
+    "2018-19": 83,
+    "2019-20": 84,
+    "2020-21": 85,
+    "2021-22": 86,
+    "2022-23": 87,
+    "2023-24": 88,
+    "2024-25": 89,
+    "2025-26": 90,
+    "2026-27": 91,
 }
+
 
 class ACBAPIError(RuntimeError):
     pass
+
 
 @dataclass
 class ACBClient:
@@ -58,7 +70,7 @@ class ACBClient:
             except requests.RequestException as exc:
                 last_error = exc
                 if attempt < 2:
-                    time.sleep(min(2 ** attempt, 2))
+                    time.sleep(min(2**attempt, 2))
                     continue
                 raise ACBAPIError(f"ACB API request failed after retries: {exc}") from exc
 
@@ -68,15 +80,13 @@ class ACBClient:
                 return r.json()
 
             if r.status_code == 429 or 500 <= r.status_code <= 599:
-                last_error = ACBAPIError(
-                    f"ACB API HTTP {r.status_code}: {r.text[:500]}"
-                )
+                last_error = ACBAPIError(f"ACB API HTTP {r.status_code}: {r.text[:500]}")
                 if attempt < 2:
                     retry_after = r.headers.get("Retry-After")
                     try:
-                        wait = float(retry_after) if retry_after else min(2 ** attempt, 2)
+                        wait = float(retry_after) if retry_after else min(2**attempt, 2)
                     except ValueError:
-                        wait = min(2 ** attempt, 2)
+                        wait = min(2**attempt, 2)
                     time.sleep(wait)
                     continue
 
@@ -158,7 +168,9 @@ class ACBClient:
         if ok_pages == 0 and server_errors:
             raise ACBAPIError("ACB calendar unavailable: all reachable weeks failed")
 
-        return sorted(found.values(), key=lambda x: (str(x.get("startDateTime") or ""), int(x.get("id") or 0)))
+        return sorted(
+            found.values(), key=lambda x: (str(x.get("startDateTime") or ""), int(x.get("id") or 0))
+        )
 
     def boxscore(self, season: str, match_id: int) -> Any:
         del season
@@ -171,4 +183,6 @@ class ACBClient:
         return self._get(MATCHDATA_BASE, "MatchShots/match-shots", {"matchId": match_id})
 
     def advanced_stats(self, match_id: int) -> Any:
-        return self._get(MATCHDATA_BASE, "AdvancedStats/match-advanced-stats", {"matchId": match_id})
+        return self._get(
+            MATCHDATA_BASE, "AdvancedStats/match-advanced-stats", {"matchId": match_id}
+        )

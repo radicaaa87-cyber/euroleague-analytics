@@ -32,7 +32,6 @@ from typing import Any
 from euroleague.config import DatabaseSettings
 from euroleague.mcp.db import connect
 
-
 NUMERIC_FIELDS = ("min", "pts", "fga", "fga3", "fta", "reb", "ast", "tov")
 
 
@@ -41,7 +40,7 @@ def _float(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

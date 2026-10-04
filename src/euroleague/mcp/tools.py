@@ -770,7 +770,10 @@ def build_registry(
                 "properties": {
                     "season": {"type": "string", "description": "ACB season such as 2025-26."},
                     "team": {"type": "string", "description": "Optional team name substring."},
-                    "from_date": {"type": "string", "description": "Earliest game date, YYYY-MM-DD."},
+                    "from_date": {
+                        "type": "string",
+                        "description": "Earliest game date, YYYY-MM-DD.",
+                    },
                     "to_date": {"type": "string", "description": "Latest game date, YYYY-MM-DD."},
                     "limit": _LIMIT,
                     "offset": _OFFSET,
@@ -791,7 +794,10 @@ def build_registry(
                 "type": "object",
                 "properties": {
                     "season": {"type": "string", "description": "ACB season such as 2025-26."},
-                    "player": {"type": "string", "description": "ACB source player id or player name."},
+                    "player": {
+                        "type": "string",
+                        "description": "ACB source player id or player name.",
+                    },
                     "team": {"type": "string", "description": "Optional team name filter."},
                     "limit": _LIMIT,
                     "offset": _OFFSET,
@@ -811,7 +817,10 @@ def build_registry(
                 "type": "object",
                 "properties": {
                     "season": {"type": "string", "description": "ACB season such as 2025-26."},
-                    "match_id": {"type": "string", "description": "ACB match id from acb_find_games."},
+                    "match_id": {
+                        "type": "string",
+                        "description": "ACB match id from acb_find_games.",
+                    },
                     "quarter": {"type": "integer", "description": "Optional quarter filter."},
                     "event_kind": {"type": "string", "description": "Optional ACB event kind."},
                     "from_index": {"type": "integer", "description": "Start at this ingest_index."},

@@ -1,5 +1,5 @@
 """ACB / Liga Endesa data access."""
 
-from acb.client import ACBAPIError, ACBClient, SEASON_EDITIONS
+from acb.client import SEASON_EDITIONS, ACBAPIError, ACBClient
 
-__all__ = ["ACBAPIError", "ACBClient", "SEASON_EDITIONS"]
+__all__ = ["SEASON_EDITIONS", "ACBAPIError", "ACBClient"]

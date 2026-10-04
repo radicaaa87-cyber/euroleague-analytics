@@ -18,9 +18,8 @@ import csv
 import re
 import unicodedata
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
 
 PLAYER_COLUMNS = (
     "player",
@@ -59,9 +58,7 @@ def choose_column(fieldnames: Iterable[str], candidates: tuple[str, ...]) -> str
     for candidate in candidates:
         if candidate.lower() in lower:
             return lower[candidate.lower()]
-    raise ValueError(
-        f"Could not find any of {candidates!r} in columns: {', '.join(names)}"
-    )
+    raise ValueError(f"Could not find any of {candidates!r} in columns: {', '.join(names)}")
 
 
 def optional_column(fieldnames: Iterable[str], candidates: tuple[str, ...]) -> str | None:
@@ -209,8 +206,7 @@ def main() -> int:
         writer.writerows(unmatched)
 
     print(
-        f"Matched={len(matched)} ambiguous={len(ambiguous)} "
-        f"unmatched={len(unmatched)} -> {output}"
+        f"Matched={len(matched)} ambiguous={len(ambiguous)} unmatched={len(unmatched)} -> {output}"
     )
     return 0
 

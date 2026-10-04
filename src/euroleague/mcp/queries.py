@@ -1498,6 +1498,7 @@ def get_roster(cursor: Cursor, arguments: dict[str, Any]) -> dict[str, Any]:
 # ACB / Liga Endesa source-native query tools
 # ---------------------------------------------------------------------------
 
+
 def _acb_season_bounds(season: str) -> tuple[str, str]:
     value = str(season).strip()
     if len(value) == 4 and value.isdigit():
@@ -1519,8 +1520,10 @@ def _acb_coverage(cursor: Cursor, season: str) -> dict[str, Any]:
     )
     row = _rows(cursor)[0]
     games = row["games"] or 0
-    completeness = "complete" if str(season).startswith("2025") and games >= 325 else (
-        "in_progress" if games else "unknown"
+    completeness = (
+        "complete"
+        if str(season).startswith("2025") and games >= 325
+        else ("in_progress" if games else "unknown")
     )
     return {
         "league": "ACB / Liga Endesa",
