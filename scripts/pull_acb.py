@@ -36,6 +36,8 @@ def main() -> int:
         _write(out / "matches.json", matches)
         counts = {"boxscore_files":0,"play_by_play_files":0,"shot_files":0,"advanced_files":0,"skipped":0}
 
+        endpoint_errors: list[dict[str, Any]] = []
+
         for match in matches:
             match_id = _id(match)
             if match_id is None:
@@ -44,15 +46,24 @@ def main() -> int:
 
             calls = []
             if not args.no_boxscores:
-                calls.append(("boxscores", client.boxscore(args.season, match_id), "boxscore_files"))
+                calls.append(("boxscores", lambda mid=match_id: client.boxscore(args.season, mid), "boxscore_files"))
             if args.with_pbp:
-                calls.append(("play_by_play", client.play_by_play(match_id), "play_by_play_files"))
+                calls.append(("play_by_play", lambda mid=match_id: client.play_by_play(mid), "play_by_play_files"))
             if args.with_shots:
-                calls.append(("shots", client.shots(match_id), "shot_files"))
+                calls.append(("shots", lambda mid=match_id: client.shots(mid), "shot_files"))
             if args.with_advanced:
-                calls.append(("advanced", client.advanced_stats(match_id), "advanced_files"))
+                calls.append(("advanced", lambda mid=match_id: client.advanced_stats(mid), "advanced_files"))
 
-            for folder, payload, counter in calls:
+            for folder, fetcher, counter in calls:
+                try:
+                    payload = fetcher()
+                except (ACBAPIError, ValueError) as exc:
+                    endpoint_errors.append({
+                        "match_id": match_id,
+                        "endpoint": folder,
+                        "error": str(exc),
+                    })
+                    continue
                 _write(out / folder / f"{match_id}.json", payload)
                 counts[counter] += 1
 
@@ -61,6 +72,8 @@ def main() -> int:
             "edition_id": client.edition_id(args.season),
             "matches": len(matches),
             **counts,
+            "failed_requests": len(endpoint_errors),
+            "endpoint_errors": endpoint_errors,
             "output": str(out),
         }
         _write(out / "pull_summary.json", summary)
