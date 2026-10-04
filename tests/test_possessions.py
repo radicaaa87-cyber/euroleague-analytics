@@ -84,15 +84,15 @@ def _event(
 # `TPOFF` names each team's tip-off jumper, two rows in every E2020 and E2021
 # game; `F` and `BF` are fighting and bench-fighting fouls, 15 rows, all in
 # E2022 game 313.
-OLDER_SEASON_EVENT_TYPES = {"TPOFF", "F", "BF"}
+NON_E2024_EVENT_TYPES = {"TPOFF", "F", "BF", "CMU_D", "CMU_DI", "CMU_FL", "CMT1"}
 
 
 def test_vocabulary_explicitly_classifies_all_31_e2024_event_types() -> None:
     """Break caught: a newly observed type is silently ignored by the counter."""
-    assert set(EVENT_ROLES) == ALL_E2024_EVENT_TYPES | OLDER_SEASON_EVENT_TYPES
+    assert set(EVENT_ROLES) == ALL_E2024_EVENT_TYPES | NON_E2024_EVENT_TYPES
     assert sum(role is EventRole.ENDING for role in EVENT_ROLES.values()) == 5
     assert sum(role is EventRole.CONTINUING for role in EVENT_ROLES.values()) == 4
-    assert sum(role is EventRole.NO_BALL for role in EVENT_ROLES.values()) == 25
+    assert sum(role is EventRole.NO_BALL for role in EVENT_ROLES.values()) == 29
 
 
 def test_older_season_marker_and_fight_rows_do_not_change_possessions() -> None:
