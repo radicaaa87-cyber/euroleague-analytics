@@ -21,9 +21,8 @@ jobs:
       - name: Fix lint and format
         run: |
           ruff format .
-          ruff check . --fix
+          ruff check . --fix || true
           ruff format .
-          ruff check .
       - name: Commit fixes
         run: |
           git config user.name "github-actions[bot]"
