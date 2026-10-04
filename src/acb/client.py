@@ -42,21 +42,25 @@ class ACBClient:
     bearer_token: str | None = None
     timeout: int = 30
 
-    def _token(self) -> str:
-        token = self.bearer_token or os.getenv("ACB_BEARER_TOKEN")
+    def _authorization(self) -> str:
+        token = (self.bearer_token or os.getenv("ACB_BEARER_TOKEN") or "").strip()
         if not token:
             raise ACBAPIError(
                 "ACB_BEARER_TOKEN is not configured. "
                 "Set it in the environment before pulling ACB data."
             )
-        return token
+        # Accept either the complete Authorization value used by existing
+        # ACB scrapers or a raw bearer token.
+        if token.lower().startswith("bearer "):
+            return token
+        return f"Bearer {token}"
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         response = requests.get(
             f"{BASE_URL}/{path.lstrip('/')}",
             params=params or {},
             headers={
-                "Authorization": f"Bearer {self._token()}",
+                "Authorization": self._authorization(),
                 "Accept": "application/json",
                 "User-Agent": "euroleague-analytics-acb/1.0",
             },
