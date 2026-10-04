@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 import requests
@@ -118,32 +119,44 @@ class ACBClient:
             raise ACBAPIError("No selectedFilters.week in ACB calendar response")
 
         found: dict[str, dict[str, Any]] = {}
-        gaps = 0
-        walked = 0
+        anchor_week = int(week_id)
+        week_ids = list(range(anchor_week, anchor_week - MAX_TOTAL_WEEKS_WALKED, -1))
+        workers = max(1, min(int(os.getenv("ACB_CALENDAR_WORKERS", "6")), 10))
+        ok_pages = 0
+        server_errors: list[str] = []
 
-        while gaps <= MAX_CONSECUTIVE_WEEK_GAPS and walked < MAX_TOTAL_WEEKS_WALKED:
-            walked += 1
+        def fetch_week(wid: int) -> tuple[int, dict[str, Any] | None, str | None]:
             try:
-                page = self._matches_page(season, int(week_id))
-            except (ValueError, ACBAPIError):
-                gaps += 1
-                week_id = int(week_id) - 1
-                continue
+                return wid, self._matches_page(season, wid), None
+            except ValueError:
+                return wid, None, None
+            except ACBAPIError as exc:
+                return wid, None, str(exc)
 
-            gaps = 0
-            for match in page.get("matches", []):
-                if not isinstance(match, dict):
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(fetch_week, wid) for wid in week_ids]
+            for future in as_completed(futures):
+                _, page, error = future.result()
+                if error:
+                    server_errors.append(error)
                     continue
-                match_id = match.get("id")
-                match_date = str(match.get("startDateTime") or "")[:10]
-                status = str(match.get("matchStatus") or "").upper()
-                if match_id is None or not (date_min <= match_date <= date_max):
+                if page is None:
                     continue
-                if status != "FINALIZED":
-                    continue
-                found[str(match_id)] = match
+                ok_pages += 1
+                for match in page.get("matches", []):
+                    if not isinstance(match, dict):
+                        continue
+                    match_id = match.get("id")
+                    match_date = str(match.get("startDateTime") or "")[:10]
+                    status = str(match.get("matchStatus") or "").upper()
+                    if match_id is None or not (date_min <= match_date <= date_max):
+                        continue
+                    if status != "FINALIZED":
+                        continue
+                    found[str(match_id)] = match
 
-            week_id = int(week_id) - 1
+        if ok_pages == 0 and server_errors:
+            raise ACBAPIError("ACB calendar unavailable: all reachable weeks failed")
 
         return sorted(found.values(), key=lambda x: (str(x.get("startDateTime") or ""), int(x.get("id") or 0)))
 
