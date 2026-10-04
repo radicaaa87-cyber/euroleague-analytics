@@ -112,6 +112,17 @@ class ACBClient:
             {"idMatch": match_id},
         )
 
+    def boxscore(self, season: str, match_id: int) -> Any:
+        """Return official ACB player boxscore rows for one match."""
+        return self._get(
+            "Boxscore/playermatchstatistics",
+            {
+                "idCompetition": COMPETITION_ID,
+                "idEdition": self.edition_id(season),
+                "idMatch": match_id,
+            },
+        )
+
     def season_matches(self, season: str) -> list[dict[str, Any]]:
         """Pull the full match list for a season by walking its matchweeks."""
         weeks = self.matchweeks(season)
