@@ -128,12 +128,8 @@ def parse_acb_boxscore(match_id: str, payload: dict[str, Any]) -> tuple[AcbPlaye
                     turnovers=_integer(line.get("turnovers")),
                     blocks=_integer(line.get("blocks")),
                     fouls_committed=_integer(line.get("personalFouls")),
-                    fouls_received=_integer(
-                        line.get("foulsReceived", line.get("foulsDrawn"))
-                    ),
-                    plus_minus=_signed_integer(
-                        line.get("plusMinus", line.get("plusMinusPoints"))
-                    ),
+                    fouls_received=_integer(line.get("foulsReceived", line.get("foulsDrawn"))),
+                    plus_minus=_signed_integer(line.get("plusMinus", line.get("plusMinusPoints"))),
                     valuation=_signed_integer(line.get("valuation")),
                 )
             )
