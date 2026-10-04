@@ -42,7 +42,7 @@ EVENT_ROLES = {
     "CCH": EventRole.NO_BALL,
     "OF": EventRole.NO_BALL,
     "CMU": EventRole.NO_BALL,
-   "CMU_D": EventRole.NO_BALL,
+    "CMU_D": EventRole.NO_BALL,
     "CMU_DI": EventRole.NO_BALL,
     "CMU_FL": EventRole.NO_BALL,
     "CMT": EventRole.NO_BALL,
