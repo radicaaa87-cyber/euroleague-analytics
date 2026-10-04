@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.9 — EuroLeague + ACB
+# Unified Player Points MODEL 0.10 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-05
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → STATE-FIRST BASELINE → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → TEAM CONSTRAINTS → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE DRIVER ATTRIBUTION → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → SCENARIO MIXTURE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → SENSITIVITY / ROBUSTNESS → CALIBRATION → EDGE → A BET / WATCH / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → STATE-FIRST BASELINE → NEW TEAM / NEW SEASON ROLE TRANSLATION → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → TEAM CONSTRAINTS → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE DRIVER ATTRIBUTION → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → SCENARIO MIXTURE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → SENSITIVITY / ROBUSTNESS → CALIBRATION → EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -105,6 +105,214 @@ Use, in order:
 
 If the expected redistribution cannot be supported, widen the distribution and lower confidence instead of inventing a role shift.
 
+
+
+
+
+## MODEL 0.10 — NEW TEAM / NEW SEASON ROLE-TRANSLATION LAYER
+
+MODEL 0.10 formalizes a recurring failure mode seen across blind tests: a player's historical scoring skill may transfer, while his **minutes, usage and attempt share often do not transfer cleanly into a new team, new coach or heavily changed roster**.
+
+The model must therefore separate **portable player skill** from **non-portable team role**.
+
+### TRANSITION-STATE DETECTION
+
+Flag a player as being in a TRANSITION STATE when one or more are true:
+
+- new team,
+- new coach with materially different rotation,
+- major roster turnover around the player,
+- new starter/bench role,
+- new primary/secondary creator hierarchy,
+- first competitive games after a major role change,
+- return from long absence into a substantially changed roster.
+
+A transition flag is not automatically negative. It changes which evidence is allowed to drive MIN and ATT.
+
+### PORTABLE VS NON-PORTABLE COMPONENTS
+
+Treat the following as relatively more portable:
+
+- shot type profile,
+- 2P / 3P / FT skill,
+- rim vs perimeter tendencies,
+- foul-drawing style,
+- catch-and-shoot vs self-created tendencies,
+- turnover / creation style.
+
+Treat the following as non-portable until confirmed in the new context:
+
+- MIN,
+- FGA/min,
+- 3PA/min,
+- FTA/min,
+- usage share,
+- creator rank,
+- closing role,
+- starter/bench hierarchy,
+- beneficiary status when teammates are absent.
+
+Old-team FGA/min or usage may be used only as a prior, never copied directly into a new-team projection.
+
+### NEW-TEAM EVIDENCE HIERARCHY
+
+For a player in transition, use evidence in this order:
+
+1. current-team competitive games in the same role/state,
+2. current-team exact or comparable lineup state,
+3. current-team official starter/rotation information and coach statements,
+4. current-team preseason / SuperCup / domestic evidence, with lower weight than official competitive EuroLeague/ACB games,
+5. previous-team role history as a prior,
+6. generic player reputation or positional assumptions only as a last resort.
+
+A single new-team game is evidence, not a stable role sample.
+
+### TEAM OFFENSIVE HIERARCHY MAP
+
+Before projecting any transitioning player's ATT, build the team's expected offensive hierarchy.
+
+For the active roster estimate:
+
+- primary creator,
+- secondary creator,
+- primary scorer,
+- secondary scorer,
+- tertiary scorer,
+- rim finisher(s),
+- spot-up specialists,
+- low-usage connectors.
+
+Then reconcile expected team FGA / 3PA / FTA shares across all active rotation players.
+
+This hierarchy must answer:
+
+- who owns possessions,
+- who gains shots when a scorer is OUT,
+- who gains creation,
+- who gains FTA pressure,
+- who merely gains minutes without usage.
+
+The same missing player's usage cannot be credited to multiple teammates.
+
+### ROLE-TRANSLATION CONFIDENCE
+
+Store a separate ROLE-TRANSLATION CONFIDENCE:
+
+- **HIGH** — multiple current-team competitive games or strong repeated same-state evidence confirm the role.
+- **MEDIUM** — some current-team evidence exists, but hierarchy or usage is still moving.
+- **LOW** — projection depends mostly on previous-team data, preseason, one game, or narrative assumptions.
+
+ROLE-TRANSLATION CONFIDENCE is independent from general ROLE CONFIDENCE.
+
+### EARLY-SAMPLE GATES
+
+Provisional selection rules until calibration proves better thresholds:
+
+#### 0–1 current-team competitive games in relevant role
+
+- previous-team ATT data may shape the prior,
+- but cannot by itself produce A BET,
+- default maximum classification is WATCH,
+- A BET is allowed only when the new role is confirmed by multiple independent pre-game signals and the bet remains robust under conservative team-share scenarios.
+
+#### 2–4 current-team competitive games in relevant role
+
+A BET requires:
+
+- current-team ATT path already visible,
+- team offensive hierarchy reconciled,
+- no unresolved beneficiary conflict,
+- HIGH or strong MEDIUM role-translation confidence,
+- BET ROBUSTNESS SCORE >= 85.
+
+#### 5+ current-team competitive games in stable role
+
+Normal MODEL 0.9/0.10 robustness thresholds may apply, while still using state-conditioned samples.
+
+These game-count bands are provisional and must be calibrated rather than tuned to one result.
+
+### NEW-SEASON ROSTER CONTINUITY
+
+At the start of a new season, estimate roster continuity qualitatively or quantitatively when data allows.
+
+Relevant questions:
+
+- how many projected rotation minutes belong to returning players?
+- how much previous-team usage remains on the roster?
+- did the primary creator or primary scorer change?
+- did the coach change?
+- are the main frontcourt/backcourt pairings new?
+
+When continuity is LOW:
+
+- prior-season team role samples lose weight,
+- previous player-team ATT distributions widen,
+- team hierarchy must be rebuilt before A BET selection.
+
+When continuity is HIGH:
+
+- prior-season role samples can retain more weight if the role is unchanged.
+
+### BENEFICIARY VALIDATION IN TRANSITION STATES
+
+An absence in a new or unstable roster does not automatically identify the beneficiary.
+
+Before boosting a transitioning player, require at least one:
+
+- repeated current-team absence pattern,
+- explicit coach role statement,
+- clear substitution / lineup evidence,
+- team-level usage redistribution that reconciles numerically.
+
+If the beneficiary is unclear:
+
+- split the usage across plausible recipients,
+- create scenario mixture branches,
+- cap at WATCH unless the bet remains +EV under all plausible beneficiary splits.
+
+### ROLE-TRANSLATION SENSITIVITY TEST
+
+For transition-state candidates, explicitly test:
+
+- old-team usage prior,
+- conservative new-team usage,
+- observed current-team usage,
+- alternate beneficiary split,
+- starter vs bench state when uncertain.
+
+If the selected side is +EV only under the old-team usage assumption, it is **NO BET**.
+
+If it survives a conservative new-team usage assumption but not all plausible states, it is **WATCH**.
+
+If it remains +EV across realistic new-team role states and passes robustness rules, it may be **A BET**.
+
+### REQUIRED OUTPUT FOR TRANSITION PLAYERS
+
+For every serious transition-state candidate show:
+
+- previous team / previous role,
+- current team,
+- number of current-team competitive games in relevant role,
+- current-team evidence type,
+- old-team ATT prior,
+- observed / inferred new-team ATT state,
+- team offensive hierarchy rank,
+- role-translation confidence,
+- whether the projection depends materially on old-team usage,
+- robustness under conservative new-team usage.
+
+### POST-GAME TRANSITION AUDIT
+
+Add the following process labels:
+
+- **ROLE TRANSLATION CORRECT**
+- **OLD-TEAM USAGE OVERWEIGHTED**
+- **NEW-TEAM BENEFICIARY MISS**
+- **NEW-TEAM HIERARCHY MISS**
+- **NEW-SEASON CONTINUITY MISS**
+- **ROLE TRANSLATION STILL UNRESOLVED**
+
+These labels are diagnostic only and never change the locked W/L result.
 
 
 ## MINUTE / USAGE REDISTRIBUTION MAP
@@ -604,6 +812,7 @@ Every serious candidate must include:
 - LOW / BASE / HIGH PTS scenario
 - probability OVER / UNDER
 - role confidence
+- role-translation confidence when transition-state applies
 - variance confidence
 - ATT volatility
 - variance explained score
@@ -1007,6 +1216,7 @@ A candidate with high volatility may still be A BET when:
 Requires all of the following:
 
 - sufficient market edge,
+- transition-state gate passed when the player is new-team/new-season,
 - supported role and rotation state,
 - supported MIN path,
 - supported ATT path,
