@@ -12,6 +12,11 @@ on:
         required: true
         default: true
         type: boolean
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/acb-run-trigger.txt"
 
 jobs:
   pull-acb:
@@ -19,6 +24,8 @@ jobs:
     timeout-minutes: 120
     env:
       ACB_API_KEY: ${{ secrets.ACB_API_KEY }}
+      ACB_SEASON: ${{ inputs.season || '2026-27' }}
+      ACB_WITH_PBP: ${{ inputs.with_pbp || 'true' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,20 +47,22 @@ jobs:
       - name: Pull season
         shell: bash
         run: |
-          if [ "${{ inputs.with_pbp }}" = "true" ]; then
-            python scripts/pull_acb.py --season "${{ inputs.season }}" --with-pbp --with-shots --with-advanced
+          if [ "$ACB_WITH_PBP" = "true" ]; then
+            python scripts/pull_acb.py --season "$ACB_SEASON" --with-pbp --with-shots --with-advanced
           else
-            python scripts/pull_acb.py --season "${{ inputs.season }}" --with-shots --with-advanced
+            python scripts/pull_acb.py --season "$ACB_SEASON" --with-shots --with-advanced
           fi
       - name: Build player game logs
-        run: python scripts/build_acb_player_game_logs.py --season "${{ inputs.season }}"
+        run: python scripts/build_acb_player_game_logs.py --season "$ACB_SEASON"
       - uses: actions/upload-artifact@v4
         with:
-          name: acb-raw-${{ inputs.season }}
-          path: data/acb_raw/${{ inputs.season }}
+          name: acb-raw-${{ env.ACB_SEASON }}
+          path: data/acb_raw/${{ env.ACB_SEASON }}
           retention-days: 30
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: acb-player-game-logs-${{ inputs.season }}
-          path: data/acb_processed/${{ inputs.season }}/player_game_logs.csv
+          name: acb-player-game-logs-${{ env.ACB_SEASON }}
+          path: data/acb_processed/${{ env.ACB_SEASON }}/player_game_logs.csv
           retention-days: 90
+          if-no-files-found: error
