@@ -1,185 +1,131 @@
-"""Official ACB / Liga Endesa data client.
-
-Uses ACB's open live API (api2.acb.com). The bearer token must be supplied
-through the ACB_BEARER_TOKEN environment variable and is never committed.
-"""
+"""Current ACB / Liga Endesa API client used by live.acb.com."""
 
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from typing import Any
-
 import requests
 
-BASE_URL = "https://api2.acb.com/api/v1/openapilive"
+SEASONDATA_BASE = "https://api2.acb.com/api/seasondata"
+MATCHDATA_BASE = "https://api2.acb.com/api/matchdata"
 COMPETITION_ID = 1
+MAX_CONSECUTIVE_WEEK_GAPS = 80
+MAX_TOTAL_WEEKS_WALKED = 300
 
-# Season label -> ACB edition id.
-# Verified from public ACB/openacb season configuration.
 SEASON_EDITIONS: dict[str, int] = {
-    "2016-17": 81,
-    "2017-18": 82,
-    "2018-19": 83,
-    "2019-20": 84,
-    "2020-21": 85,
-    "2021-22": 86,
-    "2022-23": 87,
-    "2023-24": 88,
-    "2024-25": 89,
-    "2025-26": 90,
-    "2026-27": 91,
+    "2016-17": 81, "2017-18": 82, "2018-19": 83, "2019-20": 84,
+    "2020-21": 85, "2021-22": 86, "2022-23": 87, "2023-24": 88,
+    "2024-25": 89, "2025-26": 90, "2026-27": 91,
 }
 
-
 class ACBAPIError(RuntimeError):
-    """Raised when the ACB API cannot be queried successfully."""
+    pass
 
-
-@dataclass(frozen=True)
+@dataclass
 class ACBClient:
-    """Small read-only client for Liga Endesa public data."""
-
-    bearer_token: str | None = None
+    api_key: str | None = None
     timeout: int = 30
 
-    def _authorization(self) -> str:
-        token = (self.bearer_token or os.getenv("ACB_BEARER_TOKEN") or "").strip()
-        if not token:
+    def _key(self) -> str:
+        key = (self.api_key or os.getenv("ACB_API_KEY") or "").strip()
+        if not key:
             raise ACBAPIError(
-                "ACB_BEARER_TOKEN is not configured. "
-                "Set it in the environment before pulling ACB data."
+                "ACB_API_KEY is not configured. Use the X-Apikey value from live.acb.com."
             )
-        # Accept either the complete Authorization value used by existing
-        # ACB scrapers or a raw bearer token.
-        if token.lower().startswith("bearer "):
-            return token
-        return f"Bearer {token}"
+        return key
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        response = requests.get(
-            f"{BASE_URL}/{path.lstrip('/')}",
+    def _get(self, base: str, path: str, params: dict[str, Any] | None = None) -> Any:
+        r = requests.get(
+            f"{base}/{path.lstrip('/')}",
             params=params or {},
             headers={
-                "Authorization": self._authorization(),
+                "X-Apikey": self._key(),
                 "Accept": "application/json",
-                "User-Agent": "euroleague-analytics-acb/1.0",
+                "Referer": "https://live.acb.com/",
+                "Origin": "https://live.acb.com",
+                "User-Agent": "euroleague-analytics-acb/2.0",
             },
             timeout=self.timeout,
         )
-        if response.status_code != 200:
-            raise ACBAPIError(
-                f"ACB API returned HTTP {response.status_code}: "
-                f"{response.text[:500]}"
-            )
-        return response.json()
+        if r.status_code == 400:
+            raise ValueError(r.text[:500])
+        if r.status_code != 200:
+            raise ACBAPIError(f"ACB API HTTP {r.status_code}: {r.text[:500]}")
+        return r.json()
 
     @staticmethod
     def edition_id(season: str) -> int:
-        normalized = season.strip().replace("/", "-")
-        if normalized not in SEASON_EDITIONS:
-            raise ValueError(
-                f"Unsupported ACB season {season!r}. "
-                f"Known seasons: {', '.join(SEASON_EDITIONS)}"
-            )
-        return SEASON_EDITIONS[normalized]
-
-    def matchweeks(self, season: str) -> Any:
-        """Return all Liga Endesa matchweeks for a season."""
-        return self._get(
-            "Matchweeks/lite",
-            {
-                "idCompetition": COMPETITION_ID,
-                "idEdition": self.edition_id(season),
-            },
-        )
-
-    def matches_by_matchweek(self, season: str, matchweek_id: int) -> Any:
-        """Return Liga Endesa matches for one ACB matchweek."""
-        return self._get(
-            "Matches/matchesbymatchweeklite",
-            {
-                "idCompetition": COMPETITION_ID,
-                "idEdition": self.edition_id(season),
-                "idMatchweek": matchweek_id,
-            },
-        )
-
-    def play_by_play(self, match_id: int) -> Any:
-        """Return source-order play-by-play for one ACB match."""
-        return self._get(
-            "PlayByPlay/matchevents",
-            {"idMatch": match_id},
-        )
-
-    def boxscore(self, season: str, match_id: int) -> Any:
-        """Return official ACB player boxscore rows for one match."""
-        return self._get(
-            "Boxscore/playermatchstatistics",
-            {
-                "idCompetition": COMPETITION_ID,
-                "idEdition": self.edition_id(season),
-                "idMatch": match_id,
-            },
-        )
-
-    def season_matches(self, season: str) -> list[dict[str, Any]]:
-        """Pull the full match list for a season by walking its matchweeks."""
-        weeks = self.matchweeks(season)
-        week_rows = self._rows(weeks)
-
-        matches: list[dict[str, Any]] = []
-        seen: set[int | str] = set()
-
-        for week in week_rows:
-            week_id = (
-                week.get("idMatchweek")
-                or week.get("id_matchweek")
-                or week.get("id")
-            )
-            if week_id is None:
-                continue
-
-            payload = self.matches_by_matchweek(season, int(week_id))
-            for match in self._rows(payload):
-                match_id = (
-                    match.get("idMatch")
-                    or match.get("id_match")
-                    or match.get("id")
-                )
-                key: int | str = match_id if match_id is not None else repr(match)
-                if key in seen:
-                    continue
-                seen.add(key)
-                matches.append(match)
-
-        return matches
+        season = season.strip().replace("/", "-")
+        if season not in SEASON_EDITIONS:
+            raise ValueError(f"Unsupported ACB season {season!r}")
+        return SEASON_EDITIONS[season]
 
     @staticmethod
-    def _rows(payload: Any) -> list[dict[str, Any]]:
-        """Normalize common ACB response envelopes into a row list."""
-        if isinstance(payload, list):
-            return [row for row in payload if isinstance(row, dict)]
+    def _start_year(season: str) -> int:
+        return int(season.strip().replace("/", "-").split("-", 1)[0])
 
-        if not isinstance(payload, dict):
-            return []
+    def _matches_page(self, season: str, week_id: int | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "competitionId": COMPETITION_ID,
+            "editionId": self.edition_id(season),
+            "isRoundSelected": "false",
+        }
+        if week_id is not None:
+            params["weekId"] = week_id
+        data = self._get(SEASONDATA_BASE, "Competition/matches", params)
+        if not isinstance(data, dict):
+            raise ACBAPIError("Unexpected Competition/matches response")
+        return data
 
-        for key in (
-            "data",
-            "results",
-            "items",
-            "matchweeks",
-            "matches",
-            "events",
-        ):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [row for row in value if isinstance(row, dict)]
+    def season_matches(self, season: str) -> list[dict[str, Any]]:
+        """Walk weekIds backwards because ACB week ids are not contiguous."""
+        start = self._start_year(season)
+        date_min, date_max = f"{start}-07-01", f"{start + 1}-08-31"
 
-            if isinstance(value, dict):
-                for nested_key in ("data", "items", "results"):
-                    nested = value.get(nested_key)
-                    if isinstance(nested, list):
-                        return [row for row in nested if isinstance(row, dict)]
+        anchor = self._matches_page(season)
+        week_id = (anchor.get("selectedFilters") or {}).get("week")
+        if week_id is None:
+            raise ACBAPIError("No selectedFilters.week in ACB calendar response")
 
-        return []
+        found: dict[str, dict[str, Any]] = {}
+        gaps = 0
+        walked = 0
+
+        while gaps <= MAX_CONSECUTIVE_WEEK_GAPS and walked < MAX_TOTAL_WEEKS_WALKED:
+            walked += 1
+            try:
+                page = self._matches_page(season, int(week_id))
+            except (ValueError, ACBAPIError):
+                gaps += 1
+                week_id = int(week_id) - 1
+                continue
+
+            gaps = 0
+            for match in page.get("matches", []):
+                if not isinstance(match, dict):
+                    continue
+                match_id = match.get("id")
+                match_date = str(match.get("startDateTime") or "")[:10]
+                status = str(match.get("matchStatus") or "").upper()
+                if match_id is None or not (date_min <= match_date <= date_max):
+                    continue
+                if status != "FINALIZED":
+                    continue
+                found[str(match_id)] = match
+
+            week_id = int(week_id) - 1
+
+        return sorted(found.values(), key=lambda x: (str(x.get("startDateTime") or ""), int(x.get("id") or 0)))
+
+    def boxscore(self, season: str, match_id: int) -> Any:
+        del season
+        return self._get(MATCHDATA_BASE, "Result/boxscores", {"matchId": match_id})
+
+    def play_by_play(self, match_id: int) -> Any:
+        return self._get(MATCHDATA_BASE, "PlayByPlay/play-by-play", {"matchId": match_id})
+
+    def shots(self, match_id: int) -> Any:
+        return self._get(MATCHDATA_BASE, "MatchShots/match-shots", {"matchId": match_id})
+
+    def advanced_stats(self, match_id: int) -> Any:
+        return self._get(MATCHDATA_BASE, "AdvancedStats/match-advanced-stats", {"matchId": match_id})
