@@ -1,0 +1,75 @@
+name: Pull ACB season
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: "ACB season, e.g. 2026-27"
+        required: true
+        default: "2026-27"
+      with_pbp:
+        description: "Also pull play-by-play"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  pull-acb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ACB_BEARER_TOKEN: ${{ secrets.ACB_BEARER_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify ACB token
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          if not os.getenv("ACB_BEARER_TOKEN", "").strip():
+              print("Missing GitHub secret ACB_BEARER_TOKEN", file=sys.stderr)
+              raise SystemExit(1)
+          print("ACB_BEARER_TOKEN is configured")
+          PY
+
+      - name: Pull ACB season
+        shell: bash
+        run: |
+          if [ "${{ inputs.with_pbp }}" = "true" ]; then
+            python scripts/pull_acb.py --season "${{ inputs.season }}" --with-pbp
+          else
+            python scripts/pull_acb.py --season "${{ inputs.season }}"
+          fi
+
+      - name: Build player game logs
+        run: |
+          python scripts/build_acb_player_game_logs.py --season "${{ inputs.season }}"
+
+      - name: Upload ACB raw data
+        uses: actions/upload-artifact@v4
+        with:
+          name: acb-raw-${{ inputs.season }}
+          path: data/acb_raw/${{ inputs.season }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload model-ready ACB game logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: acb-player-game-logs-${{ inputs.season }}
+          path: data/acb_processed/${{ inputs.season }}/player_game_logs.csv
+          retention-days: 90
+          if-no-files-found: error
