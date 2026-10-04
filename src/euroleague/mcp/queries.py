@@ -1617,7 +1617,8 @@ def acb_get_player_games(cursor: Cursor, arguments: dict[str, Any]) -> dict[str,
     cursor.execute(
         f"select p.match_id, g.start_at, g.home_team_name, g.away_team_name, "
         f"p.source_player_id, p.display_name, p.team_source_id, p.is_starter, "
-        f"(p.minutes_seconds / 60)::text || ':' || lpad((p.minutes_seconds % 60)::text, 2, '0') as play_time, "
+        f"(p.minutes_seconds / 60)::text || ':' || "
+        f"lpad((p.minutes_seconds % 60)::text, 2, '0') as play_time, "
         f"p.points, p.two_made, p.two_attempted, p.three_made, p.three_attempted, "
         f"p.free_throw_made, p.free_throw_attempted, "
         f"(p.two_attempted + p.three_attempted) as field_goal_attempts, "
@@ -1639,7 +1640,8 @@ def acb_get_player_games(cursor: Cursor, arguments: dict[str, Any]) -> dict[str,
         total_available=total,
         caveats=[
             "play_time is the duration published in the ACB source box score.",
-            "Player name matching is a case-insensitive substring unless a source player id is supplied.",
+            "Player name matching is a case-insensitive substring unless a source "
+            "player id is supplied.",
         ],
     )
 
