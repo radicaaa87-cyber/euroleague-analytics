@@ -69,6 +69,7 @@ POSSESSION_RETAINING_FOUL_TYPES = frozenset(
     {"CMT", "C", "B", "CMU", "CMU_D", "CMU_DI", "CMT1", "CMU_FL"}
 )
 
+
 class UnclassifiedEventTypeError(ValueError):
     """Raised rather than silently ignoring an event outside the vocabulary."""
 
