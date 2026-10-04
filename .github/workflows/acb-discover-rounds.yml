@@ -1,0 +1,29 @@
+name: ACB discover rounds
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/acb-discover-rounds.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discover ACB round ids
+        run: |
+          for edition in 90 91; do
+            response="$(curl --fail --silent --show-error "https://oarlkqteranfdsvqgfyy.supabase.co/functions/v1/acb-rounds?edition=$edition")"
+            echo "$response" > "/tmp/acb-$edition.json"
+            python - "$edition" "/tmp/acb-$edition.json" <<'PY'
+          import json, sys
+          edition = sys.argv[1]
+          data = json.load(open(sys.argv[2]))
+          rounds = data.get("availableFilters", {}).get("rounds", [])
+          print("EDITION", edition, "ROUND_IDS", ",".join(str(x.get("id")) for x in rounds))
+          print("EDITION", edition, "ROUND_COUNT", len(rounds))
+          print("EDITION", edition, "SELECTED", data.get("selectedFilters"))
+          PY
+          done
