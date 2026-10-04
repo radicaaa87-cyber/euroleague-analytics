@@ -56,9 +56,7 @@ _SEASON = {
 
 _ACB_SEASON = {
     "type": "string",
-    "description": (
-        "ACB season such as 2025-26, meaning the season ending in spring 2026."
-    ),
+    "description": ("ACB season such as 2025-26, meaning the season ending in spring 2026."),
 }
 
 _LIMIT = {
