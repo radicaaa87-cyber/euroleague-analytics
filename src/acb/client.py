@@ -26,7 +26,7 @@ class ACBAPIError(RuntimeError):
 @dataclass
 class ACBClient:
     api_key: str | None = None
-    timeout: int = 30
+    timeout: int = 20
 
     def _key(self) -> str:
         key = (self.api_key or os.getenv("ACB_API_KEY") or "").strip()
@@ -47,7 +47,7 @@ class ACBClient:
         }
 
         last_error: Exception | None = None
-        for attempt in range(5):
+        for attempt in range(3):
             try:
                 r = requests.get(
                     url,
@@ -57,8 +57,8 @@ class ACBClient:
                 )
             except requests.RequestException as exc:
                 last_error = exc
-                if attempt < 4:
-                    time.sleep(min(2 ** attempt, 8))
+                if attempt < 2:
+                    time.sleep(min(2 ** attempt, 2))
                     continue
                 raise ACBAPIError(f"ACB API request failed after retries: {exc}") from exc
 
@@ -71,12 +71,12 @@ class ACBClient:
                 last_error = ACBAPIError(
                     f"ACB API HTTP {r.status_code}: {r.text[:500]}"
                 )
-                if attempt < 4:
+                if attempt < 2:
                     retry_after = r.headers.get("Retry-After")
                     try:
-                        wait = float(retry_after) if retry_after else min(2 ** attempt, 8)
+                        wait = float(retry_after) if retry_after else min(2 ** attempt, 2)
                     except ValueError:
-                        wait = min(2 ** attempt, 8)
+                        wait = min(2 ** attempt, 2)
                     time.sleep(wait)
                     continue
 
