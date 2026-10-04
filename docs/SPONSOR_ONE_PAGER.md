@@ -10,7 +10,7 @@ Most basketball analytics rely on box scores or thin API wrappers. EuroLeague An
 - **Exact possession counting**: Counted independently per team across five verified ending events, preserving offensive rebound continuations and technical free throws.
 - **5-man lineup tracking**: Maintaining 5 players on court across every substitution, yielding accurate on/off net ratings.
 - **Spatial shot charts**: Attaching court coordinates to play-by-play events.
-- **AI-native access**: 14 read-only MCP tools allowing AI models (such as Claude) to reason over structured basketball intelligence.
+- **AI-native access**: 17 read-only MCP tools allowing AI models (such as Claude) to reason over structured basketball intelligence.
 
 ---
 
