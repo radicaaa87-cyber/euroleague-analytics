@@ -118,7 +118,8 @@ def main() -> int:
                 completed_jobs += 1
                 if completed_jobs % 50 == 0 or completed_jobs == total_jobs:
                     print(
-                        f"ACB progress: {completed_jobs}/{total_jobs} endpoint jobs; errors={len(endpoint_errors)}",
+                        f"ACB progress: {completed_jobs}/{total_jobs} endpoint jobs; "
+                        f"errors={len(endpoint_errors)}",
                         flush=True,
                     )
 
