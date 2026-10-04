@@ -19,3 +19,5 @@ jobs:
           response="$(curl --fail --silent --show-error "$ACB_IMPORT_URL")"
           echo "$response"
           python -c 'import json,sys; x=json.loads(sys.stdin.read()); assert x["ok"] and x["players"] > 0 and x["events"] > 0' <<<"$response"
+
+# rerun after live payload alignment
