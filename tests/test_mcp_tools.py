@@ -142,17 +142,18 @@ def test_registry_allows_literal_booleans_to_reach_runner():
         assert calls[-1][1]["include_quarantined"] is False
 
 
-def test_season_parameter_and_describe_warehouse_clarify_ending_year_convention(registry):
-    """Break caught: a model misinterprets E2024 as 2024-25 instead of the season ending in
-    spring 2024.
-    """
+def test_season_parameter_and_describe_warehouse_clarify_starting_year_convention(registry):
+    """Break caught: a model misinterprets E2024 as the season ending in spring 2024."""
     for name, tool in registry.items():
         if "season" in tool.input_schema["properties"]:
             desc = tool.input_schema["properties"]["season"]["description"]
-            assert "spring" in desc.lower() or "ending in" in desc.lower(), f"{name}.season"
+            if name.startswith("el_acb_"):
+                assert "ending in spring" in desc.lower(), f"{name}.season"
+            else:
+                assert "starting in autumn" in desc.lower(), f"{name}.season"
 
     describe_desc = registry["el_describe_warehouse"].description
-    assert "spring" in describe_desc.lower() or "ending in" in describe_desc.lower()
+    assert "starting in autumn" in describe_desc.lower()
 
 
 def test_paginated_tools_refuse_deep_offsets_before_the_database_runner():

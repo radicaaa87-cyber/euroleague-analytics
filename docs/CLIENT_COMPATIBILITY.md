@@ -7,7 +7,7 @@ This document defines the cross-client compatibility baseline, configuration rec
 ## 1. Core Architecture Principles
 
 1. **One Standards-First Server, Many AI Clients**: The core server is vendor-neutral and implements the official Model Context Protocol specifications (versions `2024-11-05`, `2025-03-26`, and `2025-06-18`).
-2. **Single Source of Truth**: All 17 `el_*` tools are defined in [`src/euroleague/mcp/tools.py`](../src/euroleague/mcp/tools.py). No client-specific tool forks or duplicate backends exist.
+2. **Single Source of Truth**: All 18 `el_*` tools are defined in [`src/euroleague/mcp/tools.py`](../src/euroleague/mcp/tools.py). No client-specific tool forks or duplicate backends exist.
 3. **Dual Transport Support**:
    - **Streamable HTTP** (`/mcp`): The primary hosted transport, serving async requests via ASGI/Uvicorn with connection pooling and OAuth 2.1 / Bearer token security.
    - **stdio**: The local zero-network transport, serving synchronous line-delimited JSON-RPC via standard I/O.
@@ -26,7 +26,7 @@ Verification labels strictly follow protocol verification rules:
 
 | Client / Platform | Supported Transports | Auth Methods | Discovered Tools | Status | Verification Details & Documentation Base |
 |---|---|---|:---:|:---:|---|
-| **MCP Inspector** (`@modelcontextprotocol/inspector`) | `stdio`, Streamable HTTP, SSE | Stdio (direct), OAuth 2.1, Bearer | 17 | **✅ Verified** | Tested with `--strict` schema validation (exit code 0) and live `el_describe_warehouse` execution. |
+| **MCP Inspector** (`@modelcontextprotocol/inspector`) | `stdio`, Streamable HTTP, SSE | Stdio (direct), OAuth 2.1, Bearer | 18 | **✅ Verified** | Tested with `--strict` schema validation (exit code 0) and live `el_describe_warehouse` execution. |
 | **Claude Code CLI** | `stdio`, Streamable HTTP | Local env, OAuth 2.1, Bearer | 17 | **✅ Verified** | Live `claude mcp add` and connection health check confirmed against `scripts/mcp_server.py`. |
 | **Claude Desktop** | `stdio`, Streamable HTTP | Local env (stdio), OAuth DCR (remote) | 17 | **✅ Verified** | Native Anthropic reference client; standard MCP protocol compliant. |
 | **Gemini Spark (Google AI Pro / Ultra)** | Streamable HTTP | OAuth 2.1 (Google PKCE) | 17 | **✅ Verified** | Live verified on 2026-09-17. Connected via `Settings & help → Connected apps → Custom apps for Spark`. Invoked in chat using `@<app-name>`. Returned 732 games across E2024 and E2025 via `el_describe_warehouse`. |
@@ -360,7 +360,7 @@ goose configure add-extension --name euroleague --type stdio --cmd python --args
 ## 5. Protocol & Schema Standards Compliance
 
 ### JSON Schema Dialects
-- All 17 tool input schemas are validated against both **JSON Schema Draft-07** (the baseline for OpenAI and legacy tool engines) and **JSON Schema Draft 2020-12** (the modern standard).
+- All 18 tool input schemas are validated against both **JSON Schema Draft-07** (the baseline for OpenAI and legacy tool engines) and **JSON Schema Draft 2020-12** (the modern standard).
 - No complex schema keywords (`$ref`, `anyOf`, `oneOf`, `patternProperties`, or dynamic definitions) are used.
 - All properties carry explicit scalar types (`string`, `integer`, `boolean`), detailed descriptions, and enumerated values where constrained.
 
@@ -391,7 +391,7 @@ When verifying a new client in a clean environment:
 1. **Step 1 — Discovery Verification**:
    - Launch the client with the configured MCP server.
    - Run prompt: *"List all available tools from the EuroLeague server."*
-   - Verify that all **17 tools** appear (`el_describe_warehouse`, `el_find_games`, `el_get_game`, `el_get_boxscore`, `el_get_team_stats`, `el_get_player_stats`, `el_get_lineup_stats`, `el_get_player_on_off`, `el_get_possessions`, `el_get_play_by_play`, `el_get_shot_data`, `el_get_fouls`, `el_get_referee_stats`, `el_get_roster`).
+   - Verify that all **18 tools** appear (`el_describe_warehouse`, `el_find_games`, `el_get_game`, `el_get_boxscore`, `el_get_team_stats`, `el_get_player_stats`, `el_get_player_model_context`, `el_get_lineup_stats`, `el_get_player_on_off`, `el_get_possessions`, `el_get_play_by_play`, `el_get_shot_data`, `el_get_fouls`, `el_get_referee_stats`, `el_get_roster`).
 2. **Step 2 — Single Tool Call**:
    - Run prompt: *"What seasons are loaded in the EuroLeague warehouse?"*
    - Verify that `el_describe_warehouse` executes and returns coverage (`E2024`, `E2025`, `E2026`).

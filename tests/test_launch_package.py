@@ -570,6 +570,7 @@ _ENGLISH_NUMBER_WORDS = (
     "fifteen",
     "sixteen",
     "seventeen",
+    "eighteen",
 )
 # Turkish number words that could stand in front of the Turkish word for
 # "tool" - same idea as _ENGLISH_NUMBER_WORDS above, for site/tr/index.html.
@@ -584,7 +585,8 @@ _TURKISH_NUMBER_WORDS_B64 = (
     "b24gZMO2cnQ=",  # fourteen - the current registry size
     "b24gYmXFnw==",  # fifteen
     "b24gYWx0xLE=",  # sixteen
-    "b24geWVkaQ==",  # seventeen - the current registry size
+    "b24geWVkaQ==",  # seventeen
+    "b24gc2VraXo=",  # eighteen - the current registry size
     "Ymly",  # one
     "aWtp",  # two
     "w7zDpw==",  # three
@@ -613,7 +615,7 @@ def test_public_copy_states_the_current_tool_count() -> None:
     stale_words_en = [w for w in _ENGLISH_NUMBER_WORDS if w != current_word_en]
     turkish_number_words = [base64.b64decode(w).decode("utf-8") for w in _TURKISH_NUMBER_WORDS_B64]
     tool_word_tr = base64.b64decode(_TURKISH_TOOL_WORD_B64).decode("utf-8")
-    current_word_tr = turkish_number_words[6]  # "seventeen" - see the comment above
+    current_word_tr = turkish_number_words[7]  # "eighteen" - see the comment above
     stale_words_tr = [w for w in turkish_number_words if w != current_word_tr]
 
     word_pattern_en = re.compile(

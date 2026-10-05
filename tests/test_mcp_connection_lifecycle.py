@@ -19,7 +19,7 @@ from euroleague.mcp.db import (
 )
 from euroleague.mcp.identity import IDENTITY
 from euroleague.mcp.protocol import Tool, handle_message, serve
-from euroleague.mcp.tools import build_registry
+from euroleague.mcp.tools import TOOL_NAMES, build_registry
 
 
 class TrackingCursor:
@@ -104,7 +104,7 @@ def test_constructing_manager_and_registry_does_not_open_database_connection() -
     registry = build_registry(manager.run)
 
     assert factory.call_count == 0
-    assert len(registry) == 17
+    assert len(registry) == len(TOOL_NAMES)
     assert "el_get_possessions" in registry
 
 

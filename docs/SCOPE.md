@@ -15,7 +15,7 @@ league already publishes is not derived.
 
 ## What version 1 does
 
-17 read-only tools, served identically over stdio and HTTP. Every response
+18 read-only tools, served identically over stdio and HTTP. Every response
 states its data coverage, the games it excludes, and whether a minute figure is
 raw or corrected.
 
@@ -28,7 +28,7 @@ raw or corrected.
 | `el_get_play_by_play` | The event stream in source order, with the five players on court and the running margin. |
 | `el_get_shot_data` | Shot attempts with half-court coordinates. Free throws carry no coordinate. |
 | `el_get_team_stats` | A team's season: four factors, offensive and defensive rating, pace. |
-| `el_get_player_stats` | A player's season, per game and per 100 possessions. |
+| `el_get_player_stats` | A player's season, per game and per 100 possessions. |\n| `el_get_player_model_context` | Compact pre-game player context for role, usage, rotation, possessions and opponent matchup. |
 | `el_get_lineup_stats` | Five-player lineups: possessions, offensive, defensive and net rating. |
 | `el_get_player_on_off` | The team's net rating with a player on court against off court; accepts the caller's clutch thresholds (max_seconds_remaining, max_margin), applied to both splits. |
 | `el_get_possessions` | Possession rows with start margin, clock and duration in seconds, so any clutch or transition definition is a filter (max_seconds_remaining, max_margin, max_duration_seconds); can aggregate by team, end reason, or both. |

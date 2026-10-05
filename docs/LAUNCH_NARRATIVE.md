@@ -31,7 +31,7 @@ Supporting sentence:
 
 > EuroLeague Analytics turns public play-by-play into verified possessions,
 > five-player lineups, on/off splits and shot context, then makes that derived
-> layer available to AI assistants through 17 read-only MCP tools.
+> layer available to AI assistants through 18 read-only MCP tools.
 
 ## The launch story
 

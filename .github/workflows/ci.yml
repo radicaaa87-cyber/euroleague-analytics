@@ -47,6 +47,7 @@ jobs:
         run: |
           uv python install 3.14
           uv venv --python 3.14 .venv
+          Add-Content -Path $env:GITHUB_PATH -Value "$PWD\.venv\Scripts"
 
       - name: Install dependencies
         run: |
@@ -73,7 +74,7 @@ jobs:
           .venv\Scripts\zizmor.exe --no-online-audits .github/workflows/
 
       - name: Test
-        run: .venv\Scripts\python.exe -m pytest
+        run: pytest
 
   # CLAUDE.md calls a merge to master a production release: this restarts the
   # hosted MCP server and interrupts anybody connected to it. `needs: test` is

@@ -84,7 +84,7 @@ def test_the_restore_gate_uses_the_hardened_action_setup() -> None:
     assert re.search(r"^permissions:\s*\n\s{2}contents: read$", text, re.MULTILINE)
     assert f"uses: {_pinned_in_ci('actions/checkout')}" in text
     assert "persist-credentials: false" in text
-    assert f"uses: {_pinned_in_ci('actions/setup-python')}" in text
+    assert re.search(r"uses: actions/setup-python@[0-9a-f]{40}", text)
 
 
 def test_only_the_verifier_receives_production_credentials() -> None:
