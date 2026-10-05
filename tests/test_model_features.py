@@ -152,6 +152,20 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_ppm_vs_shorter_defender_profile" in sql
     assert "pre_opponent_same_position_avg_height_cm" in sql
     assert "pre_matchup_height_diff_cm" in sql
+    assert "player_game_shot_context" in sql
+    assert "situational_fga" in sql
+    assert "pre_l10_minutes_std" in sql
+    assert "pre_l10_fga_std" in sql
+    assert "pre_l10_minutes_cv" in sql
+    assert "pre_l10_fga_cv" in sql
+    assert "pre_minute_drop_foul_reason_share" in sql
+    assert "pre_minute_drop_blowout_reason_share" in sql
+    assert "pre_minute_spike_overtime_reason_share" in sql
+    assert "pre_fga_spike_situational_reason_share" in sql
+    assert "pre_fga_spike_role_expansion_share" in sql
+    assert "pre_fga_spike_unexplained_share" in sql
+    assert "pre_last_context_neutral_fga_delta_vs_l10" in sql
+    assert "pre_last_minutes_delta_vs_l10" in sql
     assert "rows between 20 preceding and 1 preceding" in sql
     assert "rows between unbounded preceding and 1 preceding" in sql
     assert "range between interval '7 days' preceding" in sql
@@ -197,6 +211,11 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_matchup_ppm_vs_defender_height_slope",
         "pre_opponent_same_position_avg_height_cm",
         "pre_matchup_height_diff_cm",
+        "pre_l10_minutes_std",
+        "pre_l10_fga_std",
+        "pre_minute_drop_foul_reason_share",
+        "pre_fga_spike_role_expansion_share",
+        "pre_last_context_neutral_fga_delta_vs_l10",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -219,6 +238,11 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_matchup_ppm_vs_defender_height_slope",
         "pre_opponent_same_position_avg_height_cm",
         "pre_matchup_height_diff_cm",
+        "pre_l10_minutes_std",
+        "pre_l10_fga_std",
+        "pre_minute_drop_foul_reason_share",
+        "pre_fga_spike_role_expansion_share",
+        "pre_last_context_neutral_fga_delta_vs_l10",
     ]
 
 
