@@ -1,0 +1,4 @@
+# ML-only dependency set. Not installed by the runtime MCP server.
+# Training runs in a separate GitHub Actions workflow so production serving
+# stays lightweight.
+scikit-learn==1.9.1
