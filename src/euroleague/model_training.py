@@ -1,8 +1,9 @@
 """Server-side feature export for player-points machine learning.
 
-The training path talks directly to PostgreSQL in one read-only query. It does
-not page the warehouse through ChatGPT/MCP, so training data extraction does not
-consume the MCP row budget or create hundreds of model actions.
+The training path reads PostgreSQL directly in one read-only query. It uses the
+complete reconstructed play-by-play layer (possessions, lineups and stints) but
+exports compact pre-game features instead of paging raw events through ChatGPT.
+That avoids MCP row-budget consumption and action explosions.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ _MINUTES_COLUMNS = {
 def training_dataset_sql(minutes_basis: str = "official") -> str:
     """Return the leakage-safe player-game feature query.
 
-    Rolling windows always end at 1 PRECEDING, so target-game outcomes never
-    enter their own features.
+    Every rolling window ends at 1 PRECEDING, so the target game's box score,
+    possessions, lineup usage and stint pattern never enter its own features.
     """
     try:
         seconds = _MINUTES_COLUMNS[minutes_basis]
@@ -36,7 +37,144 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         ) from exc
 
     return f"""
-    with player_base as (
+    with requested_seasons as (
+        select unnest(%s::text[]) as season_code
+    ),
+    possession_player_rows as (
+        select
+            p.season_code,
+            p.gamecode,
+            lp.player_id,
+            1::integer as offensive_possessions,
+            0::integer as defensive_possessions,
+            p.points_scored as points_for,
+            0::integer as points_against,
+            case
+                when p.duration_seconds between 0 and 8 then 1
+                else 0
+            end as transition_offensive_possessions
+        from v_possession p
+        join requested_seasons rs using (season_code)
+        join v_lineup_player lp
+          on lp.lineup_id = p.offense_lineup_id
+        where not p.excluded_by_default
+
+        union all
+
+        select
+            p.season_code,
+            p.gamecode,
+            lp.player_id,
+            0::integer as offensive_possessions,
+            1::integer as defensive_possessions,
+            0::integer as points_for,
+            p.points_scored as points_against,
+            0::integer as transition_offensive_possessions
+        from v_possession p
+        join requested_seasons rs using (season_code)
+        join v_lineup_player lp
+          on lp.lineup_id = p.defense_lineup_id
+        where not p.excluded_by_default
+    ),
+    pbp_possession_game as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            sum(offensive_possessions) as pbp_offensive_possessions,
+            sum(defensive_possessions) as pbp_defensive_possessions,
+            sum(points_for) as pbp_points_for,
+            sum(points_against) as pbp_points_against,
+            sum(transition_offensive_possessions)
+                as pbp_transition_offensive_possessions
+        from possession_player_rows
+        group by 1, 2, 3
+    ),
+    player_stint_rows as (
+        select
+            ls.season_code,
+            ls.gamecode,
+            lp.player_id,
+            ls.home_lineup_id as lineup_id,
+            greatest(ls.duration_seconds_raw, 0) as duration_seconds
+        from lineup_stint ls
+        join requested_seasons rs using (season_code)
+        join v_game g
+          on g.season_code = ls.season_code
+         and g.gamecode = ls.gamecode
+        join v_lineup_player lp
+          on lp.lineup_id = ls.home_lineup_id
+        where not g.excluded_by_default
+
+        union all
+
+        select
+            ls.season_code,
+            ls.gamecode,
+            lp.player_id,
+            ls.away_lineup_id as lineup_id,
+            greatest(ls.duration_seconds_raw, 0) as duration_seconds
+        from lineup_stint ls
+        join requested_seasons rs using (season_code)
+        join v_game g
+          on g.season_code = ls.season_code
+         and g.gamecode = ls.gamecode
+        join v_lineup_player lp
+          on lp.lineup_id = ls.away_lineup_id
+        where not g.excluded_by_default
+    ),
+    player_stint_summary as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            count(*) as pbp_stint_count,
+            round(avg(duration_seconds::numeric), 3) as pbp_avg_stint_seconds,
+            max(duration_seconds) as pbp_max_stint_seconds,
+            sum(duration_seconds) as pbp_stint_seconds
+        from player_stint_rows
+        group by 1, 2, 3
+    ),
+    player_lineup_seconds as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            lineup_id,
+            sum(duration_seconds) as lineup_seconds
+        from player_stint_rows
+        group by 1, 2, 3, 4
+    ),
+    player_lineup_summary as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            count(*) as pbp_distinct_lineups,
+            round(
+                max(lineup_seconds)::numeric
+                / nullif(sum(lineup_seconds), 0),
+                4
+            ) as pbp_primary_lineup_share
+        from player_lineup_seconds
+        group by 1, 2, 3
+    ),
+    pbp_stint_game as (
+        select
+            s.season_code,
+            s.gamecode,
+            s.player_id,
+            s.pbp_stint_count,
+            s.pbp_avg_stint_seconds,
+            s.pbp_max_stint_seconds,
+            s.pbp_stint_seconds,
+            l.pbp_distinct_lineups,
+            l.pbp_primary_lineup_share
+        from player_stint_summary s
+        join player_lineup_summary l
+          using (season_code, gamecode, player_id)
+    ),
+    player_base as (
         select
             p.season_code,
             p.gamecode,
@@ -51,14 +189,38 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             p.field_goals_attempted,
             p.three_pointers_attempted,
             p.free_throws_attempted,
-            p.{seconds} as seconds_played
+            p.{seconds} as seconds_played,
+
+            coalesce(pg.pbp_offensive_possessions, 0)
+                as pbp_offensive_possessions,
+            coalesce(pg.pbp_defensive_possessions, 0)
+                as pbp_defensive_possessions,
+            coalesce(pg.pbp_points_for, 0) as pbp_points_for,
+            coalesce(pg.pbp_points_against, 0) as pbp_points_against,
+            coalesce(pg.pbp_transition_offensive_possessions, 0)
+                as pbp_transition_offensive_possessions,
+
+            coalesce(sg.pbp_stint_count, 0) as pbp_stint_count,
+            sg.pbp_avg_stint_seconds,
+            sg.pbp_max_stint_seconds,
+            sg.pbp_stint_seconds,
+            coalesce(sg.pbp_distinct_lineups, 0) as pbp_distinct_lineups,
+            sg.pbp_primary_lineup_share
         from v_player_game p
+        join requested_seasons rs using (season_code)
         join v_team_game tg
           on tg.season_code = p.season_code
          and tg.gamecode = p.gamecode
          and tg.team_code = p.team_code
-        where p.season_code = any(%s)
-          and p.seconds_official > 0
+        left join pbp_possession_game pg
+          on pg.season_code = p.season_code
+         and pg.gamecode = p.gamecode
+         and pg.player_id = p.player_id
+        left join pbp_stint_game sg
+          on sg.season_code = p.season_code
+         and sg.gamecode = p.gamecode
+         and sg.player_id = p.player_id
+        where p.seconds_official > 0
           and not p.excluded_by_default
     ),
     player_features as (
@@ -101,7 +263,47 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 60.0 * sum(field_goals_attempted) over w10
                 / nullif(sum(seconds_played) over w10, 0),
                 4
-            ) as pre_l10_fga_per_minute
+            ) as pre_l10_fga_per_minute,
+
+            round(
+                avg(pbp_offensive_possessions::numeric) over w5, 3
+            ) as pre_l5_pbp_offensive_possessions,
+            round(
+                avg(pbp_offensive_possessions::numeric) over w10, 3
+            ) as pre_l10_pbp_offensive_possessions,
+            round(
+                avg(pbp_defensive_possessions::numeric) over w5, 3
+            ) as pre_l5_pbp_defensive_possessions,
+            round(
+                avg(pbp_defensive_possessions::numeric) over w10, 3
+            ) as pre_l10_pbp_defensive_possessions,
+
+            round(
+                100.0 * sum(pbp_points_for) over w10
+                / nullif(sum(pbp_offensive_possessions) over w10, 0),
+                3
+            ) as pre_l10_pbp_on_off_rating,
+            round(
+                100.0 * sum(pbp_points_against) over w10
+                / nullif(sum(pbp_defensive_possessions) over w10, 0),
+                3
+            ) as pre_l10_pbp_on_def_rating,
+            round(
+                sum(pbp_transition_offensive_possessions)::numeric over w10
+                / nullif(sum(pbp_offensive_possessions) over w10, 0),
+                4
+            ) as pre_l10_pbp_transition_offense_share,
+
+            round(avg(pbp_stint_count::numeric) over w5, 3)
+                as pre_l5_pbp_stint_count,
+            round(avg(pbp_distinct_lineups::numeric) over w5, 3)
+                as pre_l5_pbp_distinct_lineups,
+            round(avg(pbp_avg_stint_seconds) over w5, 3)
+                as pre_l5_pbp_avg_stint_seconds,
+            round(avg(pbp_max_stint_seconds::numeric) over w5, 3)
+                as pre_l5_pbp_max_stint_seconds,
+            round(avg(pbp_primary_lineup_share) over w5, 4)
+                as pre_l5_pbp_primary_lineup_share
         from player_base
         window
             wall as (
@@ -126,26 +328,27 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
     ),
     team_features as (
         select
-            season_code,
-            gamecode,
-            team_code,
+            tg.season_code,
+            tg.gamecode,
+            tg.team_code,
             round(
-                100.0 * sum(points) over w5
-                / nullif(sum(possessions) over w5, 0),
+                100.0 * sum(tg.points) over w5
+                / nullif(sum(tg.possessions) over w5, 0),
                 3
             ) as pre_l5_off_rating,
             round(
-                100.0 * sum(opponent_points) over w5
-                / nullif(sum(opponent_possessions) over w5, 0),
+                100.0 * sum(tg.opponent_points) over w5
+                / nullif(sum(tg.opponent_possessions) over w5, 0),
                 3
             ) as pre_l5_def_rating,
-            round(avg(possessions::numeric) over w5, 3) as pre_l5_possessions
-        from v_team_game
-        where season_code = any(%s)
-          and not excluded_by_default
+            round(avg(tg.possessions::numeric) over w5, 3)
+                as pre_l5_possessions
+        from v_team_game tg
+        join requested_seasons rs using (season_code)
+        where not tg.excluded_by_default
         window w5 as (
-            partition by season_code, team_code
-            order by utc_date::date, gamecode
+            partition by tg.season_code, tg.team_code
+            order by tg.utc_date::date, tg.gamecode
             rows between 5 preceding and 1 preceding
         )
     )
@@ -181,6 +384,19 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l10_points_per_minute,
         pf.pre_l10_fga_per_minute,
 
+        pf.pre_l5_pbp_offensive_possessions,
+        pf.pre_l10_pbp_offensive_possessions,
+        pf.pre_l5_pbp_defensive_possessions,
+        pf.pre_l10_pbp_defensive_possessions,
+        pf.pre_l10_pbp_on_off_rating,
+        pf.pre_l10_pbp_on_def_rating,
+        pf.pre_l10_pbp_transition_offense_share,
+        pf.pre_l5_pbp_stint_count,
+        pf.pre_l5_pbp_distinct_lineups,
+        pf.pre_l5_pbp_avg_stint_seconds,
+        pf.pre_l5_pbp_max_stint_seconds,
+        pf.pre_l5_pbp_primary_lineup_share,
+
         ot.pre_l5_off_rating as opponent_pre_l5_off_rating,
         ot.pre_l5_def_rating as opponent_pre_l5_def_rating,
         ot.pre_l5_possessions as opponent_pre_l5_possessions,
@@ -215,7 +431,7 @@ def export_training_dataset(
     minutes_basis: str = "official",
     min_history_games: int = 3,
 ) -> dict[str, Any]:
-    """Write the complete feature set with one database query and no MCP paging."""
+    """Write the PBP-derived feature set with one DB query and no MCP paging."""
     season_list = [str(season).strip() for season in seasons if str(season).strip()]
     if not season_list:
         raise ValueError("At least one season code is required.")
@@ -232,7 +448,7 @@ def export_training_dataset(
         with connection.cursor() as cursor:
             cursor.execute(
                 training_dataset_sql(minutes_basis),
-                (season_list, season_list, min_history_games),
+                (season_list, min_history_games),
             )
             columns = [column[0] for column in cursor.description]
             with destination.open("w", newline="", encoding="utf-8") as handle:
@@ -253,4 +469,5 @@ def export_training_dataset(
         "seasons": season_list,
         "minutes_basis": minutes_basis,
         "min_history_games": min_history_games,
+        "feature_source": "boxscore_plus_full_pbp_derived",
     }
