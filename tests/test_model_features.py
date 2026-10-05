@@ -121,7 +121,18 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "order by game_tipoff_utc, gamecode" in sql
     assert "order by tg.utc_date, tg.gamecode" in sql
     assert "feature_cutoff_time" in sql
+    assert "pre_team_l5_off_rating" in sql
     assert "pre_opponent_l5_def_rating" in sql
+    assert "pre_days_rest" in sql
+    assert "pre_games_last_7d" in sql
+    assert "pre_games_last_14d" in sql
+    assert "pre_minutes_last_7d" in sql
+    assert "pre_minutes_last_14d" in sql
+    assert "pre_l3_ts_proxy" in sql
+    assert "pre_l10_ts_proxy" in sql
+    assert "pre_ts_trend_l3_vs_l10" in sql
+    assert "range between interval '7 days' preceding" in sql
+    assert "range between interval '14 days' preceding" in sql
     assert "target_points" in sql
     assert "v_possession" in sql
     assert "v_lineup_player" in sql
@@ -151,7 +162,10 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "is_home",
         "pre_l10_minutes",
         "pre_l10_pbp_on_off_rating",
+        "pre_team_l5_off_rating",
         "pre_opponent_l5_def_rating",
+        "pre_days_rest",
+        "pre_l10_ts_proxy",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -162,7 +176,10 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "is_home",
         "pre_l10_minutes",
         "pre_l10_pbp_on_off_rating",
+        "pre_team_l5_off_rating",
         "pre_opponent_l5_def_rating",
+        "pre_days_rest",
+        "pre_l10_ts_proxy",
     ]
 
 

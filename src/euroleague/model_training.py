@@ -261,6 +261,56 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             lag(game_tipoff_utc) over wall as player_feature_cutoff_time,
 
             round(
+                extract(
+                    epoch from (
+                        game_tipoff_utc
+                        - lag(game_tipoff_utc) over wall
+                    )
+                ) / 86400.0,
+                3
+            ) as pre_days_rest,
+            count(*) over w7d as pre_games_last_7d,
+            count(*) over w14d as pre_games_last_14d,
+            round(sum(seconds_played::numeric / 60.0) over w7d, 3)
+                as pre_minutes_last_7d,
+            round(sum(seconds_played::numeric / 60.0) over w14d, 3)
+                as pre_minutes_last_14d,
+
+            round(
+                (sum(points) over w3)::numeric
+                / nullif(
+                    2.0 * (
+                        (sum(field_goals_attempted) over w3)::numeric
+                        + 0.44 * (sum(free_throws_attempted) over w3)::numeric
+                    ),
+                    0
+                ),
+                4
+            ) as pre_l3_ts_proxy,
+            round(
+                (sum(points) over w5)::numeric
+                / nullif(
+                    2.0 * (
+                        (sum(field_goals_attempted) over w5)::numeric
+                        + 0.44 * (sum(free_throws_attempted) over w5)::numeric
+                    ),
+                    0
+                ),
+                4
+            ) as pre_l5_ts_proxy,
+            round(
+                (sum(points) over w10)::numeric
+                / nullif(
+                    2.0 * (
+                        (sum(field_goals_attempted) over w10)::numeric
+                        + 0.44 * (sum(free_throws_attempted) over w10)::numeric
+                    ),
+                    0
+                ),
+                4
+            ) as pre_l10_ts_proxy,
+
+            round(
                 60.0 * sum(points) over w10
                 / nullif(sum(seconds_played) over w10, 0),
                 4
@@ -330,6 +380,18 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 partition by player_id
                 order by game_tipoff_utc, gamecode
                 rows between 10 preceding and 1 preceding
+            ),
+            w7d as (
+                partition by player_id
+                order by game_tipoff_utc
+                range between interval '7 days' preceding
+                    and interval '1 microsecond' preceding
+            ),
+            w14d as (
+                partition by player_id
+                order by game_tipoff_utc
+                range between interval '14 days' preceding
+                    and interval '1 microsecond' preceding
             )
     ),
     team_features as (
@@ -365,6 +427,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.game_tipoff_utc,
         greatest(
             pf.player_feature_cutoff_time,
+            tt.team_feature_cutoff_time,
             ot.team_feature_cutoff_time
         ) as feature_cutoff_time,
         pf.game_date,
@@ -394,6 +457,14 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_starter_rate,
         pf.pre_l10_starter_rate,
         pf.pre_last_was_starter,
+        pf.pre_days_rest,
+        pf.pre_games_last_7d,
+        pf.pre_games_last_14d,
+        pf.pre_minutes_last_7d,
+        pf.pre_minutes_last_14d,
+        pf.pre_l3_ts_proxy,
+        pf.pre_l5_ts_proxy,
+        pf.pre_l10_ts_proxy,
         pf.pre_l10_points_per_minute,
         pf.pre_l10_fga_per_minute,
 
@@ -409,10 +480,15 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_pbp_max_stint_seconds,
         pf.pre_l5_pbp_primary_lineup_share,
 
+        tt.pre_l5_off_rating as pre_team_l5_off_rating,
+        tt.pre_l5_def_rating as pre_team_l5_def_rating,
+        tt.pre_l5_possessions as pre_team_l5_possessions,
         ot.pre_l5_off_rating as pre_opponent_l5_off_rating,
         ot.pre_l5_def_rating as pre_opponent_l5_def_rating,
         ot.pre_l5_possessions as pre_opponent_l5_possessions,
 
+        round(pf.pre_l3_ts_proxy - pf.pre_l10_ts_proxy, 4)
+            as pre_ts_trend_l3_vs_l10,
         round(pf.pre_l3_minutes - pf.pre_l10_minutes, 3)
             as pre_minutes_trend_l3_vs_l10,
         round(pf.pre_l3_fga - pf.pre_l10_fga, 3)
@@ -427,6 +503,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.free_throws_attempted as target_fta,
         pf.is_starter as target_was_starter
     from player_features pf
+    left join team_features tt
+      on tt.season_code = pf.season_code
+     and tt.gamecode = pf.gamecode
+     and tt.team_code = pf.team_code
     left join team_features ot
       on ot.season_code = pf.season_code
      and ot.gamecode = pf.gamecode
