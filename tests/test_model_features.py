@@ -131,6 +131,18 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_l3_ts_proxy" in sql
     assert "pre_l10_ts_proxy" in sql
     assert "pre_ts_trend_l3_vs_l10" in sql
+    assert "hand_pre_l10_ts_mean" in sql
+    assert "hand_pre_l10_ts_std" in sql
+    assert "pre_last_hand_state" in sql
+    assert "pre_hot_streak_games" in sql
+    assert "pre_cold_streak_games" in sql
+    assert "pre_avg_hot_episode_games" in sql
+    assert "pre_avg_cold_episode_games" in sql
+    assert "pre_hot_break_role_drop_rate" in sql
+    assert "pre_hot_break_eff_reversion_rate" in sql
+    assert "pre_cold_break_role_expansion_rate" in sql
+    assert "pre_cold_break_eff_recovery_rate" in sql
+    assert "rows between unbounded preceding and 1 preceding" in sql
     assert "range between interval '7 days' preceding" in sql
     assert "range between interval '14 days' preceding" in sql
     assert "target_points" in sql
@@ -166,6 +178,9 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_opponent_l5_def_rating",
         "pre_days_rest",
         "pre_l10_ts_proxy",
+        "pre_hot_streak_games",
+        "pre_avg_hot_episode_games",
+        "pre_hot_break_eff_reversion_rate",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -180,6 +195,9 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_opponent_l5_def_rating",
         "pre_days_rest",
         "pre_l10_ts_proxy",
+        "pre_hot_streak_games",
+        "pre_avg_hot_episode_games",
+        "pre_hot_break_eff_reversion_rate",
     ]
 
 

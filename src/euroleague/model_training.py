@@ -196,6 +196,17 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             p.three_pointers_attempted,
             p.free_throws_attempted,
             p.{seconds} as seconds_played,
+            round(
+                p.points::numeric
+                / nullif(
+                    2.0 * (
+                        p.field_goals_attempted::numeric
+                        + 0.44 * p.free_throws_attempted::numeric
+                    ),
+                    0
+                ),
+                4
+            ) as game_ts_proxy,
 
             coalesce(pg.pbp_offensive_possessions, 0)
                 as pbp_offensive_possessions,
@@ -227,11 +238,212 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         where p.seconds_official > 0
           and not p.excluded_by_default
     ),
+    player_hand_baseline as (
+        select
+            *,
+            count(*) over hand_w10 as hand_pre_history_games,
+            round(avg(game_ts_proxy) over hand_w10, 4)
+                as hand_pre_l10_ts_mean,
+            round(stddev_samp(game_ts_proxy) over hand_w10, 4)
+                as hand_pre_l10_ts_std,
+            round(avg(seconds_played::numeric / 60.0) over hand_w5, 3)
+                as hand_pre_l5_minutes,
+            round(avg(field_goals_attempted::numeric) over hand_w5, 3)
+                as hand_pre_l5_fga
+        from player_base
+        window
+            hand_w5 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 5 preceding and 1 preceding
+            ),
+            hand_w10 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 10 preceding and 1 preceding
+            )
+    ),
+    player_hand_classified as (
+        select
+            *,
+            round(game_ts_proxy - hand_pre_l10_ts_mean, 4)
+                as hand_eff_delta_vs_prior_l10,
+            case
+                when hand_pre_history_games < 5
+                  or game_ts_proxy is null
+                  or hand_pre_l10_ts_mean is null
+                    then 0
+                when game_ts_proxy - hand_pre_l10_ts_mean
+                    >= greatest(
+                        0.05,
+                        0.75 * coalesce(hand_pre_l10_ts_std, 0)
+                    )
+                    then 1
+                when game_ts_proxy - hand_pre_l10_ts_mean
+                    <= -greatest(
+                        0.05,
+                        0.75 * coalesce(hand_pre_l10_ts_std, 0)
+                    )
+                    then -1
+                else 0
+            end as hand_state
+        from player_hand_baseline
+    ),
+    player_hand_changes as (
+        select
+            *,
+            lag(hand_state) over hand_all as prev_hand_state,
+            case
+                when lag(hand_state) over hand_all is distinct from hand_state
+                    then 1
+                else 0
+            end as hand_state_change
+        from player_hand_classified
+        window hand_all as (
+            partition by player_id
+            order by game_tipoff_utc, gamecode
+        )
+    ),
+    player_hand_grouped as (
+        select
+            *,
+            sum(hand_state_change) over (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between unbounded preceding and current row
+            ) as hand_group
+        from player_hand_changes
+    ),
+    player_hand_runs as (
+        select
+            *,
+            row_number() over (
+                partition by player_id, hand_group
+                order by game_tipoff_utc, gamecode
+            ) as hand_run_length
+        from player_hand_grouped
+    ),
+    player_hand_events as (
+        select
+            *,
+            lag(hand_run_length) over hand_all as prev_hand_run_length,
+            case
+                when hand_state_change = 1 and prev_hand_state = 1
+                    then lag(hand_run_length) over hand_all
+            end as ended_hot_episode_length,
+            case
+                when hand_state_change = 1 and prev_hand_state = -1
+                    then lag(hand_run_length) over hand_all
+            end as ended_cold_episode_length,
+            case
+                when hand_state_change = 1
+                 and prev_hand_state = 1
+                 and (
+                    seconds_played::numeric / 60.0
+                        <= 0.80 * hand_pre_l5_minutes
+                    or field_goals_attempted::numeric
+                        <= 0.80 * hand_pre_l5_fga
+                 )
+                    then 1
+                else 0
+            end as hot_break_role_drop,
+            case
+                when hand_state_change = 1
+                 and prev_hand_state = 1
+                 and not (
+                    seconds_played::numeric / 60.0
+                        <= 0.80 * hand_pre_l5_minutes
+                    or field_goals_attempted::numeric
+                        <= 0.80 * hand_pre_l5_fga
+                 )
+                    then 1
+                else 0
+            end as hot_break_efficiency_reversion,
+            case
+                when hand_state_change = 1
+                 and prev_hand_state = -1
+                 and (
+                    seconds_played::numeric / 60.0
+                        >= 1.15 * hand_pre_l5_minutes
+                    or field_goals_attempted::numeric
+                        >= 1.20 * hand_pre_l5_fga
+                 )
+                    then 1
+                else 0
+            end as cold_break_role_expansion,
+            case
+                when hand_state_change = 1
+                 and prev_hand_state = -1
+                 and not (
+                    seconds_played::numeric / 60.0
+                        >= 1.15 * hand_pre_l5_minutes
+                    or field_goals_attempted::numeric
+                        >= 1.20 * hand_pre_l5_fga
+                 )
+                    then 1
+                else 0
+            end as cold_break_efficiency_recovery
+        from player_hand_runs
+        window hand_all as (
+            partition by player_id
+            order by game_tipoff_utc, gamecode
+        )
+    ),
     player_features as (
         select
             *,
             count(*) over w10 as pre_history_games,
             count(*) over wseason as pre_current_season_games,
+
+            coalesce(prev_hand_state, 0) as pre_last_hand_state,
+            round(
+                lag(hand_eff_delta_vs_prior_l10) over wall,
+                4
+            ) as pre_last_ts_delta_vs_prior_l10,
+            case
+                when prev_hand_state = 1
+                    then coalesce(prev_hand_run_length, 0)
+                else 0
+            end as pre_hot_streak_games,
+            case
+                when prev_hand_state = -1
+                    then coalesce(prev_hand_run_length, 0)
+                else 0
+            end as pre_cold_streak_games,
+
+            count(ended_hot_episode_length) over whistory
+                as pre_completed_hot_episodes,
+            count(ended_cold_episode_length) over whistory
+                as pre_completed_cold_episodes,
+            round(avg(ended_hot_episode_length::numeric) over whistory, 3)
+                as pre_avg_hot_episode_games,
+            round(avg(ended_cold_episode_length::numeric) over whistory, 3)
+                as pre_avg_cold_episode_games,
+            max(ended_hot_episode_length) over whistory
+                as pre_max_hot_episode_games,
+            max(ended_cold_episode_length) over whistory
+                as pre_max_cold_episode_games,
+
+            round(
+                (sum(hot_break_role_drop) over whistory)::numeric
+                / nullif(count(ended_hot_episode_length) over whistory, 0),
+                4
+            ) as pre_hot_break_role_drop_rate,
+            round(
+                (sum(hot_break_efficiency_reversion) over whistory)::numeric
+                / nullif(count(ended_hot_episode_length) over whistory, 0),
+                4
+            ) as pre_hot_break_eff_reversion_rate,
+            round(
+                (sum(cold_break_role_expansion) over whistory)::numeric
+                / nullif(count(ended_cold_episode_length) over whistory, 0),
+                4
+            ) as pre_cold_break_role_expansion_rate,
+            round(
+                (sum(cold_break_efficiency_recovery) over whistory)::numeric
+                / nullif(count(ended_cold_episode_length) over whistory, 0),
+                4
+            ) as pre_cold_break_eff_recovery_rate,
 
             round(avg(seconds_played::numeric / 60.0) over w3, 3) as pre_l3_minutes,
             round(avg(seconds_played::numeric / 60.0) over w5, 3) as pre_l5_minutes,
@@ -355,11 +567,16 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 as pre_l5_pbp_max_stint_seconds,
             round(avg(pbp_primary_lineup_share) over w5, 4)
                 as pre_l5_pbp_primary_lineup_share
-        from player_base
+        from player_hand_events
         window
             wall as (
                 partition by player_id
                 order by game_tipoff_utc, gamecode
+            ),
+            whistory as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between unbounded preceding and 1 preceding
             ),
             wseason as (
                 partition by season_code, player_id
@@ -439,6 +656,20 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
 
         pf.pre_history_games,
         pf.pre_current_season_games,
+        pf.pre_last_hand_state,
+        pf.pre_last_ts_delta_vs_prior_l10,
+        pf.pre_hot_streak_games,
+        pf.pre_cold_streak_games,
+        pf.pre_completed_hot_episodes,
+        pf.pre_completed_cold_episodes,
+        pf.pre_avg_hot_episode_games,
+        pf.pre_avg_cold_episode_games,
+        pf.pre_max_hot_episode_games,
+        pf.pre_max_cold_episode_games,
+        pf.pre_hot_break_role_drop_rate,
+        pf.pre_hot_break_eff_reversion_rate,
+        pf.pre_cold_break_role_expansion_rate,
+        pf.pre_cold_break_eff_recovery_rate,
         pf.pre_l3_minutes,
         pf.pre_l5_minutes,
         pf.pre_l10_minutes,
