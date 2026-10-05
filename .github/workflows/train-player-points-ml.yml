@@ -14,21 +14,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
-          python-version: "3.14"
+          version: "0.12.23"
+          enable-cache: false
+      - name: Create Python 3.14 environment
+        run: |
+          uv python install 3.14
+          uv venv --python 3.14 .venv
       - name: Install training dependencies
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-ml.txt
-          python -m pip install -e .
+          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+          uv pip install --python .venv\Scripts\python.exe -r requirements-ml.txt
+          uv pip install --python .venv\Scripts\python.exe -e .
       - name: Train E2023-E2024 and blind-test E2025
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force ml-output | Out-Null
-          python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
+          .venv\Scripts\python.exe scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
       - name: Upload ML artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

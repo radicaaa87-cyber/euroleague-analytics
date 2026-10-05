@@ -18,16 +18,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
-          python-version: "3.14"
+          version: "0.12.23"
+          enable-cache: false
+      - name: Create Python 3.14 environment
+        run: |
+          uv python install 3.14
+          uv venv --python 3.14 .venv
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install -e .
+          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+          uv pip install --python .venv\Scripts\python.exe -e .
       - name: Restore and load complete E2023 archive
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python scripts/load_hosted_historical.py E2023
+        run: .venv\Scripts\python.exe scripts/load_hosted_historical.py E2023
