@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from euroleague.mcp.model_features import get_player_model_context
-from euroleague.model_training import training_dataset_sql
+from euroleague.model_training import model_feature_columns, training_dataset_sql
 
 
 class RecordingCursor:
@@ -132,3 +132,21 @@ def test_training_query_supports_all_three_minutes_bases() -> None:
 def test_training_query_rejects_unknown_minutes_basis() -> None:
     with pytest.raises(ValueError, match="minutes_basis"):
         training_dataset_sql("invented")
+
+
+def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> None:
+    columns = [
+        "player_id",
+        "team_code",
+        "is_home",
+        "pre_l10_minutes",
+        "pre_l10_pbp_on_off_rating",
+        "target_points",
+        "target_minutes",
+        "bookmaker_line",
+    ]
+    assert model_feature_columns(columns) == [
+        "is_home",
+        "pre_l10_minutes",
+        "pre_l10_pbp_on_off_rating",
+    ]
