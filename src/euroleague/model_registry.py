@@ -30,13 +30,9 @@ class ModelRegistryConflictError(RuntimeError):
 def validate_model_identity(model_family: str, version: str, git_commit: str) -> None:
     """Reject identifiers that could escape an artifact path or weaken lineage."""
     if not _FAMILY_RE.fullmatch(model_family):
-        raise ValueError(
-            "model_family must use lowercase letters, digits, underscores or hyphens."
-        )
+        raise ValueError("model_family must use lowercase letters, digits, underscores or hyphens.")
     if not _VERSION_RE.fullmatch(version):
-        raise ValueError(
-            "version must use letters, digits, dots, underscores or hyphens."
-        )
+        raise ValueError("version must use letters, digits, dots, underscores or hyphens.")
     if not _GIT_SHA_RE.fullmatch(git_commit):
         raise ValueError("git_commit must be a full 40-character lowercase Git SHA.")
 
