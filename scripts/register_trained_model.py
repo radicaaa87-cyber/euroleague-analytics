@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -30,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--family", default="player_points")
     parser.add_argument("--version", required=True)
-    parser.add_argument("--git-commit", default=os.environ.get("GITHUB_SHA", ""))
+    parser.add_argument("--git-commit", required=True)
     parser.add_argument("--artifact-bucket", default=MODEL_ARTIFACT_BUCKET)
     return parser
 
