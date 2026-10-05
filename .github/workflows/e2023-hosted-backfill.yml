@@ -1,9 +1,7 @@
 name: E2023 hosted historical backfill
 
 on:
-  push:
-    branches:
-      - feat/model-feature-bundle
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +12,6 @@ concurrency:
 
 jobs:
   backfill:
-    if: github.event.head_commit.message == 'run: backfill E2023 hosted warehouse'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
