@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import datetime as dt
 
 import pytest
 
@@ -28,8 +28,8 @@ def _row(
     season: str,
     gamecode: int,
     player: str,
-    tipoff: datetime,
-    cutoff: datetime,
+    tipoff: dt.datetime,
+    cutoff: dt.datetime,
     pre_points: float,
     opponent_def: float,
     target: float,
@@ -48,14 +48,14 @@ def _row(
 
 
 def test_cutoff_gate_accepts_strictly_historical_sources() -> None:
-    tipoff = datetime(2025, 1, 10, 19, 30, tzinfo=UTC)
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     rows = [
         _row(
             "E2024",
             100,
             "P1",
             tipoff,
-            tipoff - timedelta(days=3),
+            tipoff - dt.timedelta(days=3),
             12.0,
             111.5,
             15.0,
@@ -68,7 +68,7 @@ def test_cutoff_gate_accepts_strictly_historical_sources() -> None:
 
 
 def test_cutoff_gate_rejects_source_at_or_after_tipoff() -> None:
-    tipoff = datetime(2025, 1, 10, 19, 30, tzinfo=UTC)
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     rows = [_row("E2024", 100, "P1", tipoff, tipoff, 12.0, 111.5, 15.0)]
 
     with pytest.raises(LeakageAuditError, match="not strictly before tipoff"):
@@ -76,14 +76,14 @@ def test_cutoff_gate_rejects_source_at_or_after_tipoff() -> None:
 
 
 def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> None:
-    tipoff = datetime(2025, 1, 10, 19, 30, tzinfo=UTC)
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     baseline = [
         _row(
             "E2024",
             100,
             "P1",
             tipoff,
-            tipoff - timedelta(days=3),
+            tipoff - dt.timedelta(days=3),
             12.0,
             111.5,
             15.0,
@@ -95,8 +95,8 @@ def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> 
             "E2025",
             1,
             "P1",
-            tipoff + timedelta(days=250),
-            tipoff + timedelta(days=240),
+            tipoff + dt.timedelta(days=250),
+            tipoff + dt.timedelta(days=240),
             14.0,
             108.0,
             17.0,
@@ -111,14 +111,14 @@ def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> 
 
 
 def test_prefix_invariance_rejects_future_mutation_of_old_feature() -> None:
-    tipoff = datetime(2025, 1, 10, 19, 30, tzinfo=UTC)
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     baseline = [
         _row(
             "E2024",
             100,
             "P1",
             tipoff,
-            tipoff - timedelta(days=3),
+            tipoff - dt.timedelta(days=3),
             12.0,
             111.5,
             15.0,
@@ -130,7 +130,7 @@ def test_prefix_invariance_rejects_future_mutation_of_old_feature() -> None:
             100,
             "P1",
             tipoff,
-            tipoff - timedelta(days=3),
+            tipoff - dt.timedelta(days=3),
             13.0,
             111.5,
             15.0,

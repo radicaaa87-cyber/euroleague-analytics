@@ -33,9 +33,13 @@ def _require_columns(columns: list[str], required: tuple[str, ...]) -> dict[str,
 
 
 def _same_value(left: Any, right: Any) -> bool:
-    if isinstance(left, float) and isinstance(right, float):
-        if math.isnan(left) and math.isnan(right):
-            return True
+    if (
+        isinstance(left, float)
+        and isinstance(right, float)
+        and math.isnan(left)
+        and math.isnan(right)
+    ):
+        return True
     return left == right
 
 
