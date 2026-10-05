@@ -2,6 +2,11 @@ name: E2023 hosted historical backfill
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/acb-ingestion
+    paths:
+      - ".github/backfill/e2023.trigger"
 
 permissions:
   contents: read
