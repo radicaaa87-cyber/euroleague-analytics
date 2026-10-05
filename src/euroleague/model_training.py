@@ -1126,6 +1126,124 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             round(avg(free_throws_attempted::numeric) over w5, 3) as pre_l5_fta,
             round(avg(free_throws_attempted::numeric) over w10, 3) as pre_l10_fta,
 
+            round(stddev_samp(seconds_played::numeric / 60.0) over w5, 3)
+                as pre_l5_minutes_std,
+            round(stddev_samp(seconds_played::numeric / 60.0) over w10, 3)
+                as pre_l10_minutes_std,
+            round(
+                max(seconds_played::numeric / 60.0) over w10
+                - min(seconds_played::numeric / 60.0) over w10,
+                3
+            ) as pre_l10_minutes_range,
+            round(
+                stddev_samp(seconds_played::numeric / 60.0) over w10
+                / nullif(avg(seconds_played::numeric / 60.0) over w10, 0),
+                4
+            ) as pre_l10_minutes_cv,
+            round(stddev_samp(field_goals_attempted::numeric) over w5, 3)
+                as pre_l5_fga_std,
+            round(stddev_samp(field_goals_attempted::numeric) over w10, 3)
+                as pre_l10_fga_std,
+            max(field_goals_attempted) over w10
+                - min(field_goals_attempted) over w10
+                as pre_l10_fga_range,
+            round(
+                stddev_samp(field_goals_attempted::numeric) over w10
+                / nullif(avg(field_goals_attempted::numeric) over w10, 0),
+                4
+            ) as pre_l10_fga_cv,
+            round(stddev_samp(points::numeric) over w10, 3)
+                as pre_l10_points_std,
+            max(points) over w10 - min(points) over w10
+                as pre_l10_points_range,
+
+            round(avg(minute_spike_event::numeric) over w10, 4)
+                as pre_l10_minute_spike_rate,
+            round(avg(minute_drop_event::numeric) over w10, 4)
+                as pre_l10_minute_drop_rate,
+            round(avg(fga_spike_event::numeric) over w10, 4)
+                as pre_l10_fga_spike_rate,
+            round(avg(fga_drop_event::numeric) over w10, 4)
+                as pre_l10_fga_drop_rate,
+            round(avg(starter_change_event::numeric) over w10, 4)
+                as pre_l10_starter_change_rate,
+
+            round(
+                (sum(minute_drop_foul_context) over w20)::numeric
+                / nullif(sum(minute_drop_event) over w20, 0),
+                4
+            ) as pre_minute_drop_foul_reason_share,
+            round(
+                (sum(minute_drop_blowout_context) over w20)::numeric
+                / nullif(sum(minute_drop_event) over w20, 0),
+                4
+            ) as pre_minute_drop_blowout_reason_share,
+            round(
+                (sum(minute_drop_demotion_context) over w20)::numeric
+                / nullif(sum(minute_drop_event) over w20, 0),
+                4
+            ) as pre_minute_drop_demotion_reason_share,
+            round(
+                (sum(minute_drop_unexplained_context) over w20)::numeric
+                / nullif(sum(minute_drop_event) over w20, 0),
+                4
+            ) as pre_minute_drop_unexplained_share,
+            round(
+                (sum(minute_spike_overtime_context) over w20)::numeric
+                / nullif(sum(minute_spike_event) over w20, 0),
+                4
+            ) as pre_minute_spike_overtime_reason_share,
+            round(
+                (sum(minute_spike_close_game_context) over w20)::numeric
+                / nullif(sum(minute_spike_event) over w20, 0),
+                4
+            ) as pre_minute_spike_close_reason_share,
+            round(
+                (sum(minute_spike_promotion_context) over w20)::numeric
+                / nullif(sum(minute_spike_event) over w20, 0),
+                4
+            ) as pre_minute_spike_promotion_reason_share,
+            round(
+                (sum(minute_spike_unexplained_context) over w20)::numeric
+                / nullif(sum(minute_spike_event) over w20, 0),
+                4
+            ) as pre_minute_spike_unexplained_share,
+            round(
+                (sum(fga_spike_situational_context) over w20)::numeric
+                / nullif(sum(fga_spike_event) over w20, 0),
+                4
+            ) as pre_fga_spike_situational_reason_share,
+            round(
+                (sum(fga_spike_role_expansion_context) over w20)::numeric
+                / nullif(sum(fga_spike_event) over w20, 0),
+                4
+            ) as pre_fga_spike_role_expansion_share,
+            round(
+                (sum(fga_spike_unexplained_context) over w20)::numeric
+                / nullif(sum(fga_spike_event) over w20, 0),
+                4
+            ) as pre_fga_spike_unexplained_share,
+
+            lag(minute_spike_event) over wall as pre_last_minute_spike,
+            lag(minute_drop_event) over wall as pre_last_minute_drop,
+            lag(fga_spike_event) over wall as pre_last_fga_spike,
+            lag(fga_drop_event) over wall as pre_last_fga_drop,
+            lag(starter_change_event) over wall as pre_last_starter_change,
+            lag(minute_drop_foul_context) over wall
+                as pre_last_minute_drop_foul_context,
+            lag(minute_drop_blowout_context) over wall
+                as pre_last_minute_drop_blowout_context,
+            lag(minute_spike_overtime_context) over wall
+                as pre_last_minute_spike_overtime_context,
+            lag(minute_spike_close_game_context) over wall
+                as pre_last_minute_spike_close_context,
+            lag(fga_spike_situational_context) over wall
+                as pre_last_fga_spike_situational_context,
+            lag(fga_spike_role_expansion_context) over wall
+                as pre_last_fga_spike_role_expansion_context,
+            lag(fga_spike_unexplained_context) over wall
+                as pre_last_fga_spike_unexplained_context,
+
             round(lag(seconds_played::numeric / 60.0) over wall, 3)
                 as pre_last_minutes,
             lag(field_goals_attempted) over wall as pre_last_fga,
