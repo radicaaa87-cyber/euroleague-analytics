@@ -1,1 +1,1 @@
-CI retrigger marker for self-hosted Windows validation. No runtime behavior changes.
+CI retrigger after disabling pip cache on self-hosted Windows. No runtime behavior changes.
