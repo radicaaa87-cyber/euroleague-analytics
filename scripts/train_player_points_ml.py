@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         "minutes_basis": args.minutes_basis,
         "min_history_games": args.min_history_games,
         "rows": {
-            "all": int(len(rows)),
+            "all": len(rows),
             "tuning_train": int(np.sum(tuning_train_mask)),
             "validation": int(np.sum(validation_mask)),
             "final_train": int(np.sum(final_train_mask)),
