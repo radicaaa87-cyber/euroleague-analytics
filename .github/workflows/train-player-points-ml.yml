@@ -44,9 +44,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          MODEL_GIT_COMMIT: ${{ github.sha }}
         shell: powershell
         run: |
-          .venv\Scripts\python.exe scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "${{ inputs.model_version }}" --git-commit "${{ github.sha }}"
+          .venv\Scripts\python.exe scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "$env:MODEL_VERSION" --git-commit "$env:MODEL_GIT_COMMIT"
       - name: Upload ML artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
