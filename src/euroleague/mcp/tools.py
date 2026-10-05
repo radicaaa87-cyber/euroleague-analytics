@@ -46,8 +46,8 @@ _INCLUDE_QUARANTINED = {
 _SEASON = {
     "type": "string",
     "description": (
-        "Season code such as E2024. E<YYYY> identifies the season ending in spring <YYYY> "
-        "(for example, E2024 is the 2023-24 season). Call el_describe_warehouse to see "
+        "Season code such as E2024. E<YYYY> identifies the season starting in autumn <YYYY> "
+        "(for example, E2024 is the 2024-25 season). Call el_describe_warehouse to see "
         "which seasons are loaded."
     ),
 }
@@ -164,7 +164,7 @@ def build_registry(
                 "holds, whether each is complete, in progress, or of unknown completeness, "
                 "the date range covered, which games are excluded by default and "
                 "why, and the teams in each season. Season codes follow the E<YYYY> convention "
-                "for the season ending in spring <YYYY> (for example, E2024 is the 2023-24 "
+                "for the season starting in autumn <YYYY> (for example, E2024 is the 2024-25 "
                 "season). Counting statistics served by the other tools are the official "
                 "euroleague.net box score; possessions, pace, lineups, on/off and every "
                 "per-100 rate are this project's own reconstruction from play-by-play "
