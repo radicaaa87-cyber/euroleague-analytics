@@ -38,6 +38,14 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
             ),
             (
                 [
+                    "pbp_history_games",
+                    "l10_pbp_offensive_possessions",
+                    "l10_pbp_stint_count",
+                ],
+                [(10, 48.2, 22.1)],
+            ),
+            (
+                [
                     "games_included",
                     "total_games",
                     "first_game",
@@ -64,7 +72,22 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
     summary_sql = cursor.statements[2]
     assert "p.utc_date::date < %s" in summary_sql
     assert cursor.parameters[2] == ("E2026", "P009862", "2026-10-05", 10)
+    pbp_sql = cursor.statements[3]
+    assert "complete reconstructed" not in pbp_sql.lower()
+    assert "v_possession" in pbp_sql
+    assert "lineup_stint" in pbp_sql
+    assert "pg.utc_date::date < %s" in pbp_sql
+    assert cursor.parameters[3] == (
+        "E2026",
+        "P009862",
+        "2026-10-05",
+        10,
+        "E2026",
+        "E2026",
+        "E2026",
+    )
     assert response["row_count"] == 1
+    assert response["rows"][0]["pbp_history_games"] == 10
     assert response["minutes_basis"]["value"] == "official"
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
@@ -90,6 +113,12 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "rows between 5 preceding and 1 preceding" in sql
     assert "rows between 10 preceding and 1 preceding" in sql
     assert "target_points" in sql
+    assert "v_possession" in sql
+    assert "v_lineup_player" in sql
+    assert "lineup_stint" in sql
+    assert "pre_l10_pbp_on_off_rating" in sql
+    assert "pre_l5_pbp_primary_lineup_share" in sql
+    assert "transition_offense" not in sql
     assert "bookmaker" not in sql
     assert "central_line" not in sql
 
