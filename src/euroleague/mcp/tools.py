@@ -1,4 +1,4 @@
-"""The fourteen tool definitions.
+"""The fifteen tool definitions.
 
 Descriptions are read by the model at call time, so they are written as prompts
 rather than as code comments: what the tool answers, what the numbers mean, and
