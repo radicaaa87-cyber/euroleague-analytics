@@ -8,6 +8,7 @@ E2025 is reserved for one final blind evaluation of that locked winner.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from importlib.metadata import version as distribution_version
 from typing import Any
 
@@ -286,9 +287,8 @@ def candidate_specs() -> tuple[ModelCandidate, ...]:
 def build_model(family: str, params: dict[str, Any]) -> Any:
     """Construct one estimator; heavy ML libraries are imported only for training."""
     if family == "hist_gradient_boosting":
-        from sklearn.ensemble import HistGradientBoostingRegressor
-
-        return HistGradientBoostingRegressor(
+        estimator = getattr(import_module("sklearn.ensemble"), "HistGradientBoostingRegressor")
+        return estimator(
             loss="squared_error",
             random_state=42,
             early_stopping=False,
@@ -296,9 +296,8 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "xgboost":
-        from xgboost import XGBRegressor
-
-        return XGBRegressor(
+        estimator = getattr(import_module("xgboost"), "XGBRegressor")
+        return estimator(
             objective="reg:squarederror",
             tree_method="hist",
             random_state=42,
@@ -308,9 +307,8 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "catboost":
-        from catboost import CatBoostRegressor
-
-        return CatBoostRegressor(
+        estimator = getattr(import_module("catboost"), "CatBoostRegressor")
+        return estimator(
             loss_function="RMSE",
             random_seed=42,
             verbose=False,
@@ -320,9 +318,8 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "lightgbm":
-        from lightgbm import LGBMRegressor
-
-        return LGBMRegressor(
+        estimator = getattr(import_module("lightgbm"), "LGBMRegressor")
+        return estimator(
             objective="regression",
             random_state=42,
             n_jobs=4,
