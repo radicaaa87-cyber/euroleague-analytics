@@ -31,7 +31,15 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           mkdir -p ml-output
-          python scripts/train_player_points_ml.py             --train-season E2023             --validation-season E2024             --test-season E2025             --minutes-basis official             --min-history-games 3             --report ml-output/report.json             --model ml-output/player_points_model.pkl             --predictions ml-output/e2025_predictions.csv
+          python scripts/train_player_points_ml.py \
+            --train-season E2023 \
+            --validation-season E2024 \
+            --test-season E2025 \
+            --minutes-basis official \
+            --min-history-games 3 \
+            --report ml-output/report.json \
+            --model ml-output/player_points_model.pkl \
+            --predictions ml-output/e2025_predictions.csv
       - name: Upload ML artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
