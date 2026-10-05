@@ -964,6 +964,51 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             round(avg(free_throws_attempted::numeric) over w5, 3) as pre_l5_fta,
             round(avg(free_throws_attempted::numeric) over w10, 3) as pre_l10_fta,
 
+            round(lag(seconds_played::numeric / 60.0) over wall, 3)
+                as pre_last_minutes,
+            lag(field_goals_attempted) over wall as pre_last_fga,
+            lag(three_pointers_attempted) over wall as pre_last_3pa,
+            lag(context_neutral_fga) over wall as pre_last_context_neutral_fga,
+            lag(situational_fga) over wall as pre_last_situational_fga,
+            lag(late_trailing_fga) over wall as pre_last_late_trailing_fga,
+            lag(late_clock_proxy_fga) over wall as pre_last_late_clock_proxy_fga,
+            round(
+                lag(
+                    situational_fga::numeric
+                    / nullif(field_goals_attempted, 0)
+                ) over wall,
+                4
+            ) as pre_last_situational_fga_share,
+            round(avg(context_neutral_fga::numeric) over w5, 3)
+                as pre_l5_context_neutral_fga,
+            round(avg(context_neutral_fga::numeric) over w10, 3)
+                as pre_l10_context_neutral_fga,
+            round(
+                (sum(situational_fga) over w5)::numeric
+                / nullif(sum(field_goals_attempted) over w5, 0),
+                4
+            ) as pre_l5_situational_fga_share,
+            round(
+                (sum(situational_fga) over w10)::numeric
+                / nullif(sum(field_goals_attempted) over w10, 0),
+                4
+            ) as pre_l10_situational_fga_share,
+            round(
+                (sum(late_trailing_fga) over w5)::numeric
+                / nullif(sum(field_goals_attempted) over w5, 0),
+                4
+            ) as pre_l5_late_trailing_fga_share,
+            round(
+                (sum(late_clock_proxy_fga) over w5)::numeric
+                / nullif(sum(field_goals_attempted) over w5, 0),
+                4
+            ) as pre_l5_late_clock_proxy_fga_share,
+            round(
+                (sum(three_pointers_attempted) over w10)::numeric
+                / nullif(sum(field_goals_attempted) over w10, 0),
+                4
+            ) as pre_l10_3pa_share,
+
             round(avg(case when is_starter then 1.0 else 0.0 end) over w5, 4)
                 as pre_l5_starter_rate,
             round(avg(case when is_starter then 1.0 else 0.0 end) over w10, 4)
