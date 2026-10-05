@@ -322,8 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "
-", encoding="utf-8")
+    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     args.model.parent.mkdir(parents=True, exist_ok=True)
     with args.model.open("wb") as handle:
