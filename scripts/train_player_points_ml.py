@@ -150,6 +150,69 @@ def _write_predictions(
             )
 
 
+def _benchmark_target(
+    x: np.ndarray,
+    y: np.ndarray,
+    tuning_train_mask: np.ndarray,
+    validation_mask: np.ndarray,
+    final_train_mask: np.ndarray,
+    test_mask: np.ndarray,
+) -> dict[str, Any]:
+    """Select one model family on validation and blind-score it once."""
+    candidate_results: list[dict[str, Any]] = []
+    best_by_family: dict[str, dict[str, Any]] = {}
+    selected: dict[str, Any] | None = None
+    selected_mae = math.inf
+
+    for spec in candidate_specs():
+        model = build_model(spec.family, spec.params)
+        model.fit(x[tuning_train_mask], y[tuning_train_mask])
+        validation_prediction = model.predict(x[validation_mask])
+        metrics = _metric_summary(y[validation_mask], validation_prediction)
+        result = {
+            "candidate_id": spec.candidate_id,
+            "family": spec.family,
+            "params": spec.params,
+            "validation": metrics,
+        }
+        candidate_results.append(result)
+        family_best = best_by_family.get(spec.family)
+        if family_best is None or metrics["mae"] < family_best["validation"]["mae"]:
+            best_by_family[spec.family] = result
+        if metrics["mae"] < selected_mae:
+            selected_mae = metrics["mae"]
+            selected = result
+
+    assert selected is not None
+
+    leaderboard = sorted(
+        (
+            {
+                "family": family,
+                "candidate_id": result["candidate_id"],
+                "params": result["params"],
+                "validation": result["validation"],
+            }
+            for family, result in best_by_family.items()
+        ),
+        key=lambda item: item["validation"]["mae"],
+    )
+    identity = runtime_model_identity(selected["family"])
+    final_model = build_model(selected["family"], selected["params"])
+    final_model.fit(x[final_train_mask], y[final_train_mask])
+    test_prediction = final_model.predict(x[test_mask])
+
+    return {
+        "candidate_results": candidate_results,
+        "validation_leaderboard": leaderboard,
+        "selected": selected,
+        "identity": identity,
+        "model": final_model,
+        "test_prediction": test_prediction,
+        "blind_test": _metric_summary(y[test_mask], test_prediction),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     seasons = [args.train_season, args.validation_season, args.test_season]
@@ -218,52 +281,46 @@ def main(argv: list[str] | None = None) -> int:
         if not np.any(mask):
             raise RuntimeError(f"No rows available for {label} split.")
 
-    candidate_results: list[dict[str, Any]] = []
-    best_by_family: dict[str, dict[str, Any]] = {}
-    selected: dict[str, Any] | None = None
-    selected_mae = math.inf
-
-    for spec in candidate_specs():
-        model = build_model(spec.family, spec.params)
-        model.fit(x[tuning_train_mask], y[tuning_train_mask])
-        validation_prediction = model.predict(x[validation_mask])
-        metrics = _metric_summary(y[validation_mask], validation_prediction)
-        result = {
-            "candidate_id": spec.candidate_id,
-            "family": spec.family,
-            "params": spec.params,
-            "validation": metrics,
-        }
-        candidate_results.append(result)
-
-        family_best = best_by_family.get(spec.family)
-        if family_best is None or metrics["mae"] < family_best["validation"]["mae"]:
-            best_by_family[spec.family] = result
-
-        if metrics["mae"] < selected_mae:
-            selected_mae = metrics["mae"]
-            selected = result
-
-    assert selected is not None
-
-    validation_leaderboard = sorted(
-        (
-            {
-                "family": family,
-                "candidate_id": result["candidate_id"],
-                "params": result["params"],
-                "validation": result["validation"],
-            }
-            for family, result in best_by_family.items()
-        ),
-        key=lambda item: item["validation"]["mae"],
+    point_result = _benchmark_target(
+        x,
+        y,
+        tuning_train_mask,
+        validation_mask,
+        final_train_mask,
+        test_mask,
     )
+    candidate_results = point_result["candidate_results"]
+    validation_leaderboard = point_result["validation_leaderboard"]
+    selected = point_result["selected"]
+    selected_identity = point_result["identity"]
+    final_model = point_result["model"]
+    test_prediction = point_result["test_prediction"]
+    test_metrics = point_result["blind_test"]
 
-    selected_identity = runtime_model_identity(selected["family"])
-    final_model = build_model(selected["family"], selected["params"])
-    final_model.fit(x[final_train_mask], y[final_train_mask])
-    test_prediction = final_model.predict(x[test_mask])
-    test_metrics = _metric_summary(y[test_mask], test_prediction)
+    minutes_y = np.asarray(
+        [float(row[index["target_minutes"]]) for row in rows],
+        dtype=float,
+    )
+    fga_y = np.asarray(
+        [float(row[index["target_fga"]]) for row in rows],
+        dtype=float,
+    )
+    minutes_result = _benchmark_target(
+        x,
+        minutes_y,
+        tuning_train_mask,
+        validation_mask,
+        final_train_mask,
+        test_mask,
+    )
+    fga_result = _benchmark_target(
+        x,
+        fga_y,
+        tuning_train_mask,
+        validation_mask,
+        final_train_mask,
+        test_mask,
+    )
 
     baseline_index = feature_names.index("pre_l10_points")
     baseline_prediction = x[test_mask, baseline_index]
