@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pytest
-
-import euroleague.leakage as leakage
+from euroleague import leakage
 
 
 COLUMNS = [
@@ -67,8 +65,12 @@ def test_cutoff_gate_rejects_source_at_or_after_tipoff() -> None:
     tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     rows = [_row("E2024", 100, "P1", tipoff, tipoff, 12.0, 111.5, 15.0)]
 
-    with pytest.raises(leakage.LeakageAuditError, match="not strictly before tipoff"):
+    try:
         leakage.assert_feature_cutoffs_before_tipoff(COLUMNS, rows)
+    except leakage.LeakageAuditError as error:
+        assert "not strictly before tipoff" in str(error)
+    else:
+        raise AssertionError("Leakage cutoff gate accepted a source at tipoff.")
 
 
 def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> None:
@@ -133,5 +135,9 @@ def test_prefix_invariance_rejects_future_mutation_of_old_feature() -> None:
         )
     ]
 
-    with pytest.raises(leakage.LeakageAuditError, match="changed after adding future data"):
+    try:
         leakage.assert_prefix_invariance(COLUMNS, baseline, COLUMNS, expanded)
+    except leakage.LeakageAuditError as error:
+        assert "changed after adding future data" in str(error)
+    else:
+        raise AssertionError("Prefix invariance gate accepted a mutated historical feature.")
