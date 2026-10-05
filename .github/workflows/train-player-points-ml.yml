@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   train:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,17 +29,10 @@ jobs:
       - name: Train E2023-E2024 and blind-test E2025
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        shell: powershell
         run: |
-          mkdir -p ml-output
-          python scripts/train_player_points_ml.py \
-            --train-season E2023 \
-            --validation-season E2024 \
-            --test-season E2025 \
-            --minutes-basis official \
-            --min-history-games 3 \
-            --report ml-output/report.json \
-            --model ml-output/player_points_model.pkl \
-            --predictions ml-output/e2025_predictions.csv
+          New-Item -ItemType Directory -Force ml-output | Out-Null
+          python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
       - name: Upload ML artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
