@@ -183,6 +183,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         select
             p.season_code,
             p.gamecode,
+            p.utc_date as game_tipoff_utc,
             p.utc_date::date as game_date,
             p.player_id,
             p.player_name,
@@ -257,6 +258,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             round(avg(case when is_starter then 1.0 else 0.0 end) over w10, 4)
                 as pre_l10_starter_rate,
             lag(is_starter) over wall as pre_last_was_starter,
+            lag(game_tipoff_utc) over wall as player_feature_cutoff_time,
 
             round(
                 60.0 * sum(points) over w10
@@ -307,26 +309,26 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         window
             wall as (
                 partition by player_id
-                order by game_date, gamecode
+                order by game_tipoff_utc, gamecode
             ),
             wseason as (
                 partition by season_code, player_id
-                order by game_date, gamecode
+                order by game_tipoff_utc, gamecode
                 rows between unbounded preceding and 1 preceding
             ),
             w3 as (
                 partition by player_id
-                order by game_date, gamecode
+                order by game_tipoff_utc, gamecode
                 rows between 3 preceding and 1 preceding
             ),
             w5 as (
                 partition by player_id
-                order by game_date, gamecode
+                order by game_tipoff_utc, gamecode
                 rows between 5 preceding and 1 preceding
             ),
             w10 as (
                 partition by player_id
-                order by game_date, gamecode
+                order by game_tipoff_utc, gamecode
                 rows between 10 preceding and 1 preceding
             )
     ),
@@ -335,6 +337,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             tg.season_code,
             tg.gamecode,
             tg.team_code,
+            lag(tg.utc_date) over w5 as team_feature_cutoff_time,
             round(
                 100.0 * sum(tg.points) over w5
                 / nullif(sum(tg.possessions) over w5, 0),
@@ -352,13 +355,18 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         where not tg.excluded_by_default
         window w5 as (
             partition by tg.team_code
-            order by tg.utc_date::date, tg.gamecode
+            order by tg.utc_date, tg.gamecode
             rows between 5 preceding and 1 preceding
         )
     )
     select
         pf.season_code,
         pf.gamecode,
+        pf.game_tipoff_utc,
+        greatest(
+            pf.player_feature_cutoff_time,
+            ot.team_feature_cutoff_time
+        ) as feature_cutoff_time,
         pf.game_date,
         pf.player_id,
         pf.player_name,
@@ -401,9 +409,9 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_pbp_max_stint_seconds,
         pf.pre_l5_pbp_primary_lineup_share,
 
-        ot.pre_l5_off_rating as opponent_pre_l5_off_rating,
-        ot.pre_l5_def_rating as opponent_pre_l5_def_rating,
-        ot.pre_l5_possessions as opponent_pre_l5_possessions,
+        ot.pre_l5_off_rating as pre_opponent_l5_off_rating,
+        ot.pre_l5_def_rating as pre_opponent_l5_def_rating,
+        ot.pre_l5_possessions as pre_opponent_l5_possessions,
 
         round(pf.pre_l3_minutes - pf.pre_l10_minutes, 3)
             as pre_minutes_trend_l3_vs_l10,

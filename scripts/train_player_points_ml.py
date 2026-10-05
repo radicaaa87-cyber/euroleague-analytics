@@ -30,6 +30,10 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from euroleague.config import DatabaseSettings
+from euroleague.leakage import (
+    assert_feature_cutoffs_before_tipoff,
+    assert_prefix_invariance,
+)
 from euroleague.mcp.db import connect
 from euroleague.ml_benchmark import (
     build_model,
@@ -119,6 +123,8 @@ def _write_predictions(
     fieldnames = [
         "season_code",
         "gamecode",
+        "game_tipoff_utc",
+        "feature_cutoff_time",
         "game_date",
         "player_id",
         "player_name",
@@ -157,6 +163,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not rows:
         raise RuntimeError("Training query returned no rows.")
+
+    baseline_columns, baseline_rows = _fetch_dataset(
+        [args.train_season, args.validation_season],
+        args.minutes_basis,
+        args.min_history_games,
+    )
+    if not baseline_rows:
+        raise RuntimeError("Leakage baseline query returned no rows.")
+
+    cutoff_audit = assert_feature_cutoffs_before_tipoff(columns, rows)
+    prefix_audit = assert_prefix_invariance(
+        baseline_columns,
+        baseline_rows,
+        columns,
+        rows,
+    )
+    leakage_audit = {
+        "feature_cutoff": cutoff_audit,
+        "future_prefix_invariance": prefix_audit,
+        "baseline_seasons": [args.train_season, args.validation_season],
+        "future_added_season": args.test_season,
+    }
+    print(f"leakage_audit={json.dumps(leakage_audit, sort_keys=True)}")
 
     feature_names = model_feature_columns(columns)
     if not feature_names:
@@ -299,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "feature_count": len(feature_names),
         "features": feature_names,
+        "leakage_audit": leakage_audit,
         "candidate_results": candidate_results,
         "validation_leaderboard": validation_leaderboard,
         "selected_model": {
@@ -316,6 +346,8 @@ def main(argv: list[str] | None = None) -> int:
             "Only the locked E2024 validation winner is scored on the E2025 blind test.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
+            "A temporal leakage gate requires every feature cutoff to precede tipoff.",
+            "Adding E2025 must leave every E2023/E2024 model feature byte-for-byte equal.",
             "Bookmaker lines are excluded; betting EDGE is evaluated later by "
             "joining locked predictions.",
         ],
@@ -336,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
                 "minutes_basis": args.minutes_basis,
                 "trained_seasons": [args.train_season, args.validation_season],
                 "blind_test_season": args.test_season,
+                "leakage_audit": leakage_audit,
             },
             handle,
             protocol=pickle.HIGHEST_PROTOCOL,
@@ -344,6 +377,8 @@ def main(argv: list[str] | None = None) -> int:
     metadata_fields = [
         "season_code",
         "gamecode",
+        "game_tipoff_utc",
+        "feature_cutoff_time",
         "game_date",
         "player_id",
         "player_name",

@@ -115,6 +115,10 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "partition by player_id" in sql
     assert "pre_current_season_games" in sql
     assert "partition by tg.team_code" in sql
+    assert "order by game_tipoff_utc, gamecode" in sql
+    assert "order by tg.utc_date, tg.gamecode" in sql
+    assert "feature_cutoff_time" in sql
+    assert "pre_opponent_l5_def_rating" in sql
     assert "target_points" in sql
     assert "v_possession" in sql
     assert "v_lineup_player" in sql
@@ -144,6 +148,9 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "is_home",
         "pre_l10_minutes",
         "pre_l10_pbp_on_off_rating",
+        "pre_opponent_l5_def_rating",
+        "feature_cutoff_time",
+        "game_tipoff_utc",
         "target_points",
         "target_minutes",
         "bookmaker_line",
@@ -152,4 +159,5 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "is_home",
         "pre_l10_minutes",
         "pre_l10_pbp_on_off_rating",
+        "pre_opponent_l5_def_rating",
     ]

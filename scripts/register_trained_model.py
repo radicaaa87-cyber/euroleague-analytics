@@ -63,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         "min_history_games": report["min_history_games"],
         "rows": report["rows"],
         "feature_count": report["feature_count"],
+        "leakage_audit": report["leakage_audit"],
         "candidate_results": report["candidate_results"],
         "validation_leaderboard": report["validation_leaderboard"],
         "selected_model": selected_model,
