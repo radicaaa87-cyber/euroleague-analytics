@@ -26,8 +26,7 @@ def _require_columns(columns: list[str], required: tuple[str, ...]) -> dict[str,
     missing = [name for name in required if name not in index]
     if missing:
         raise LeakageAuditError(
-            "Leakage audit cannot run because required columns are missing: "
-            + ", ".join(missing)
+            "Leakage audit cannot run because required columns are missing: " + ", ".join(missing)
         )
     return index
 
@@ -58,9 +57,7 @@ def assert_feature_cutoffs_before_tipoff(
         key = tuple(row[index[name]] for name in ROW_KEY_COLUMNS)
 
         if not isinstance(tipoff, datetime):
-            raise LeakageAuditError(
-                f"{TIPOFF_COLUMN} for {key!r} is not a timestamp: {tipoff!r}."
-            )
+            raise LeakageAuditError(f"{TIPOFF_COLUMN} for {key!r} is not a timestamp: {tipoff!r}.")
         if not isinstance(cutoff, datetime):
             violations.append(f"{key!r}: cutoff={cutoff!r}, tipoff={tipoff!r}")
             continue
@@ -103,8 +100,7 @@ def assert_prefix_invariance(
 
     compare_columns = [*baseline_features, CUTOFF_COLUMN]
     expanded_by_key = {
-        tuple(row[expanded_index[name]] for name in ROW_KEY_COLUMNS): row
-        for row in expanded_rows
+        tuple(row[expanded_index[name]] for name in ROW_KEY_COLUMNS): row for row in expanded_rows
     }
 
     missing_keys: list[str] = []
@@ -122,9 +118,7 @@ def assert_prefix_invariance(
             left = baseline_row[baseline_index[column]]
             right = expanded_row[expanded_index[column]]
             if not _same_value(left, right):
-                changed.append(
-                    f"{key!r} {column}: baseline={left!r}, expanded={right!r}"
-                )
+                changed.append(f"{key!r} {column}: baseline={left!r}, expanded={right!r}")
                 break
         rows_checked += 1
 

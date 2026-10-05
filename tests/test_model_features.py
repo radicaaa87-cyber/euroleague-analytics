@@ -166,7 +166,6 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
     ]
 
 
-
 LEAKAGE_COLUMNS = [
     "season_code",
     "gamecode",
