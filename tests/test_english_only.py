@@ -229,7 +229,7 @@ def test_all_tracked_files_are_english_only() -> None:
             check=True,
         )
         tracked_files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except FileNotFoundError, subprocess.CalledProcessError:
         excluded_parts = {".git", ".venv", ".tmp", ".pytest_cache", ".ruff_cache", "__pycache__"}
         tracked_files = []
         for path in REPO_ROOT.rglob("*"):
