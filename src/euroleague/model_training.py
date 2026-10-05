@@ -234,6 +234,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         select
             *,
             count(*) over w10 as pre_history_games,
+            count(*) over wseason as pre_current_season_games,
 
             round(avg(seconds_played::numeric / 60.0) over w3, 3) as pre_l3_minutes,
             round(avg(seconds_played::numeric / 60.0) over w5, 3) as pre_l5_minutes,
@@ -309,21 +310,26 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         from player_base
         window
             wall as (
-                partition by season_code, player_id
+                partition by player_id
                 order by game_date, gamecode
             ),
-            w3 as (
+            wseason as (
                 partition by season_code, player_id
+                order by game_date, gamecode
+                rows between unbounded preceding and 1 preceding
+            ),
+            w3 as (
+                partition by player_id
                 order by game_date, gamecode
                 rows between 3 preceding and 1 preceding
             ),
             w5 as (
-                partition by season_code, player_id
+                partition by player_id
                 order by game_date, gamecode
                 rows between 5 preceding and 1 preceding
             ),
             w10 as (
-                partition by season_code, player_id
+                partition by player_id
                 order by game_date, gamecode
                 rows between 10 preceding and 1 preceding
             )
@@ -349,7 +355,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         join requested_seasons rs using (season_code)
         where not tg.excluded_by_default
         window w5 as (
-            partition by tg.season_code, tg.team_code
+            partition by tg.team_code
             order by tg.utc_date::date, tg.gamecode
             rows between 5 preceding and 1 preceding
         )
@@ -365,6 +371,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.is_home,
 
         pf.pre_history_games,
+        pf.pre_current_season_games,
         pf.pre_l3_minutes,
         pf.pre_l5_minutes,
         pf.pre_l10_minutes,
