@@ -162,10 +162,13 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                     filter (where rn <= 10), 2) as l10_team_possessions,
 
                 max(points) filter (where rn = 1) as last_points,
-                round(max(seconds_played)::numeric
-                    filter (where rn = 1) / 60.0, 2) as last_minutes,
+                round(
+                    (max(seconds_played) filter (where rn = 1))::numeric / 60.0,
+                    2
+                ) as last_minutes,
                 max(field_goals_attempted) filter (where rn = 1) as last_fga,
-                max(is_starter::int) filter (where rn = 1)::boolean as last_was_starter,
+                (max(is_starter::int) filter (where rn = 1))::boolean
+                    as last_was_starter,
 
                 jsonb_agg(
                     jsonb_build_object(
