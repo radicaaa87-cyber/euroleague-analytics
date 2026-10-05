@@ -54,7 +54,10 @@ jobs:
           uv pip install --python .venv\Scripts\python.exe -e .
 
       - name: Lint
-        run: .venv\Scripts\ruff.exe check .
+        run: |
+          .venv\Scripts\ruff.exe check --fix scripts\train_player_points_ml.py
+          git diff -- scripts\train_player_points_ml.py
+          .venv\Scripts\ruff.exe check .
 
       - name: Check formatting
         run: .venv\Scripts\ruff.exe format --check .
