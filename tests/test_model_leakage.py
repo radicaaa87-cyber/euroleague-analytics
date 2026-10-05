@@ -4,11 +4,7 @@ import datetime as dt
 
 import pytest
 
-from euroleague.leakage import (
-    LeakageAuditError,
-    assert_feature_cutoffs_before_tipoff,
-    assert_prefix_invariance,
-)
+import euroleague.leakage as leakage
 
 
 COLUMNS = [
@@ -62,7 +58,7 @@ def test_cutoff_gate_accepts_strictly_historical_sources() -> None:
         )
     ]
 
-    result = assert_feature_cutoffs_before_tipoff(COLUMNS, rows)
+    result = leakage.assert_feature_cutoffs_before_tipoff(COLUMNS, rows)
 
     assert result == {"rows_checked": 1, "violations": 0}
 
@@ -71,8 +67,8 @@ def test_cutoff_gate_rejects_source_at_or_after_tipoff() -> None:
     tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
     rows = [_row("E2024", 100, "P1", tipoff, tipoff, 12.0, 111.5, 15.0)]
 
-    with pytest.raises(LeakageAuditError, match="not strictly before tipoff"):
-        assert_feature_cutoffs_before_tipoff(COLUMNS, rows)
+    with pytest.raises(leakage.LeakageAuditError, match="not strictly before tipoff"):
+        leakage.assert_feature_cutoffs_before_tipoff(COLUMNS, rows)
 
 
 def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> None:
@@ -103,7 +99,7 @@ def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> 
         ),
     ]
 
-    result = assert_prefix_invariance(COLUMNS, baseline, COLUMNS, expanded)
+    result = leakage.assert_prefix_invariance(COLUMNS, baseline, COLUMNS, expanded)
 
     assert result["rows_checked"] == 1
     assert result["features_checked"] == 3
@@ -137,5 +133,5 @@ def test_prefix_invariance_rejects_future_mutation_of_old_feature() -> None:
         )
     ]
 
-    with pytest.raises(LeakageAuditError, match="changed after adding future data"):
-        assert_prefix_invariance(COLUMNS, baseline, COLUMNS, expanded)
+    with pytest.raises(leakage.LeakageAuditError, match="changed after adding future data"):
+        leakage.assert_prefix_invariance(COLUMNS, baseline, COLUMNS, expanded)
