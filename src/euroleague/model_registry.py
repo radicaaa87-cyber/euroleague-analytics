@@ -108,8 +108,7 @@ class ModelArtifactStorage:
         actual = hashlib.sha256(response.content).hexdigest()
         if actual != expected_sha256:
             raise ModelArtifactError(
-                f"Stored model artifact {path!r} has checksum {actual}, "
-                f"expected {expected_sha256}."
+                f"Stored model artifact {path!r} has checksum {actual}, expected {expected_sha256}."
             )
         return response.content
 
