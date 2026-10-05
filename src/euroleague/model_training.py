@@ -775,7 +775,39 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                     >= greatest(role_pre_l5_fga + 3.0, role_pre_l5_fga * 1.30)
                     then 1
                 else 0
-            end as fga_spike_role_expansion_context
+            end as fga_spike_role_expansion_context,
+            case
+                when minute_drop_event = 1
+                 and not (
+                    fouls_commited >= 4
+                    or game_was_blowout
+                    or starter_demotion_event = 1
+                 )
+                    then 1
+                else 0
+            end as minute_drop_unexplained_context,
+            case
+                when minute_spike_event = 1
+                 and not (
+                    game_went_overtime
+                    or game_was_close
+                    or starter_promotion_event = 1
+                 )
+                    then 1
+                else 0
+            end as minute_spike_unexplained_context,
+            case
+                when fga_spike_event = 1
+                 and not (
+                    situational_fga >= 2
+                    or situational_fga::numeric
+                        / nullif(field_goals_attempted, 0) >= 0.25
+                    or context_neutral_fga
+                        >= greatest(role_pre_l5_fga + 3.0, role_pre_l5_fga * 1.30)
+                 )
+                    then 1
+                else 0
+            end as fga_spike_unexplained_context
         from player_role_events
     ),
     player_hand_baseline as (
