@@ -41,8 +41,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
     minutes_basis = arguments.get("minutes_basis", "official")
     if minutes_basis not in ("corrected", "raw", "official"):
         raise ValueError(
-            "minutes_basis must be 'corrected', 'raw' or 'official', "
-            f"got {minutes_basis!r}."
+            f"minutes_basis must be 'corrected', 'raw' or 'official', got {minutes_basis!r}."
         )
     seconds_column = {
         "corrected": "seconds_corrected",
@@ -355,7 +354,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             with recent as (
                 select *
                 from v_team_game
-                where {' and '.join(opponent_conditions)}
+                where {" and ".join(opponent_conditions)}
                 order by utc_date desc, gamecode desc
                 limit 5
             )

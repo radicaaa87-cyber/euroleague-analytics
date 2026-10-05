@@ -33,9 +33,7 @@ def model_feature_columns(columns: Iterable[str]) -> list[str]:
     bookmaker lines and every target_* field are deliberately excluded.
     """
     return [
-        column
-        for column in columns
-        if column.startswith("pre_") or column in _SAFE_STATIC_FEATURES
+        column for column in columns if column.startswith("pre_") or column in _SAFE_STATIC_FEATURES
     ]
 
 
@@ -48,9 +46,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
     try:
         seconds = _MINUTES_COLUMNS[minutes_basis]
     except KeyError as exc:
-        raise ValueError(
-            "minutes_basis must be one of: official, corrected, raw"
-        ) from exc
+        raise ValueError("minutes_basis must be one of: official, corrected, raw") from exc
 
     return f"""
     with requested_seasons as (

@@ -47,9 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     season_code = validate_season_code(args.season.strip().upper())
     if season_code in LIVE_SEASONS:
-        raise SystemExit(
-            f"{season_code} is a live season and must use the normal live pipeline."
-        )
+        raise SystemExit(f"{season_code} is a live season and must use the normal live pipeline.")
 
     database_settings, storage_settings = live_runtime_settings(os.environ)
 

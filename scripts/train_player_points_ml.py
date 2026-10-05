@@ -312,9 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         "selected_params": best_params,
         "blind_test": test_metrics,
         "l10_points_baseline": baseline_metrics,
-        "mae_improvement_vs_l10": float(
-            baseline_metrics["mae"] - test_metrics["mae"]
-        ),
+        "mae_improvement_vs_l10": float(baseline_metrics["mae"] - test_metrics["mae"]),
         "permutation_importance": ranked_importance,
         "notes": [
             "Model selection uses E2024 validation only; E2025 is not used for tuning.",
@@ -353,10 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         "opponent_team_code",
     ]
     test_rows = [row for row, selected in zip(rows, test_mask, strict=True) if selected]
-    metadata = [
-        {field: row[index[field]] for field in metadata_fields}
-        for row in test_rows
-    ]
+    metadata = [{field: row[index[field]] for field in metadata_fields} for row in test_rows]
     _write_predictions(
         args.predictions,
         metadata,
