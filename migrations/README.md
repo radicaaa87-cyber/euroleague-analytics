@@ -39,6 +39,7 @@ MCP — see `DECISIONS.md` item 10 for why this rather than the Supabase CLI.
 | `0032_athlete_game_history` | Adds `v_athlete_game_history`, a chronological EL+ACB player-game view that joins only through explicit canonical identities, never names. **Applied on 2026-10-04 UTC as `20261004132501`** through the Supabase MCP. |
 | `0033_source_native_identity_status` | Adds `source_native` identity status so every observed EL/ACB source id can receive a canonical athlete without pretending that an unverified cross-source match exists. Production was populated with 432 ACB ids and 262 EL ids; only verified cross-source links are merged. **Applied on 2026-10-04 UTC as `20261004132715`** through the Supabase MCP. |
 | `0034_acb_mcp_reader_access` | Grants `el_reader` read-only `select` access to `acb_game`, `acb_player_game`, and `acb_event` so the hosted MCP can serve the three source-native Liga Endesa tools. Grants no write privilege. Applied to production on 2026-10-04 after confirming `el_reader` has `bypassrls`; production then reported `select=true` on all three tables. |
+| `0035_model_registry` | Adds the private model registry for immutable model versions, artifact checksums/locations, training lineage, feature lists, metrics and lifecycle status. A partial unique index permits at most one `production` version per model family; `el_reader` and `el_tester` receive read-only access. **Applied on 2026-10-05 UTC as `20261005214945`** through the Supabase MCP. |
 
 ## The 0013 rehearsal, 2026-08-27
 
