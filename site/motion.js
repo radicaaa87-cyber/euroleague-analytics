@@ -9,7 +9,7 @@
 
    So there are two, and each one means something.
 
-   THE NUMBERS COUNT. 732 games, 53 held back, 14 tools. These are not round
+   THE NUMBERS COUNT. 732 games, 53 held back, 17 tools. These are not round
    numbers chosen for a headline; they are the result of counting, and the
    count is the claim. A number that arrives by counting says what it is.
 

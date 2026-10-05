@@ -1,0 +1,87 @@
+name: Pull ACB season
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: "ACB season, e.g. 2026-27"
+        required: true
+        default: "2026-27"
+      with_pbp:
+        description: "Also pull play-by-play"
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/acb-run-trigger.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  pull-acb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ACB_API_KEY: ${{ secrets.ACB_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Resolve season
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WITH_PBP: ${{ inputs.with_pbp }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "ACB_SEASON=$INPUT_SEASON" >> "$GITHUB_ENV"
+            echo "ACB_WITH_PBP=$INPUT_WITH_PBP" >> "$GITHUB_ENV"
+          else
+            SEASON=$(sed -n 's/^season=//p' .github/acb-run-trigger.txt | tail -n1)
+            WITH_PBP=$(sed -n 's/^with_pbp=//p' .github/acb-run-trigger.txt | tail -n1)
+            echo "ACB_SEASON=${SEASON:-2026-27}" >> "$GITHUB_ENV"
+            echo "ACB_WITH_PBP=${WITH_PBP:-true}" >> "$GITHUB_ENV"
+          fi
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Verify ACB API key
+        run: |
+          python - <<'PY'
+          import os, sys
+          if not os.getenv("ACB_API_KEY", "").strip():
+              print("Missing GitHub secret ACB_API_KEY", file=sys.stderr)
+              raise SystemExit(1)
+          print("ACB_API_KEY configured")
+          PY
+      - name: Pull season
+        shell: bash
+        run: |
+          if [ "$ACB_WITH_PBP" = "true" ]; then
+            python scripts/pull_acb.py --season "$ACB_SEASON" --with-pbp --with-shots --with-advanced
+          else
+            python scripts/pull_acb.py --season "$ACB_SEASON" --with-shots --with-advanced
+          fi
+      - name: Build player game logs
+        run: python scripts/build_acb_player_game_logs.py --season "$ACB_SEASON"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: acb-raw-${{ env.ACB_SEASON }}
+          path: data/acb_raw/${{ env.ACB_SEASON }}
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: acb-player-game-logs-${{ env.ACB_SEASON }}
+          path: data/acb_processed/${{ env.ACB_SEASON }}/player_game_logs.csv
+          retention-days: 90
+          if-no-files-found: error

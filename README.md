@@ -42,9 +42,9 @@ Every number published by this warehouse is mechanically verified against offici
 
 ---
 
-## 3. The 14 MCP Tools
+## 3. The 17 MCP Tools
 
-The server exposes 14 read-only tools designed specifically for LLMs. Every response declares its data coverage, quarantined game exclusions, and whether minutes are raw or corrected.
+The server exposes 17 read-only tools designed specifically for LLMs. Every response declares its data coverage, quarantined game exclusions, and whether minutes are raw or corrected.
 
 | Tool | Purpose |
 |---|---|
@@ -62,13 +62,16 @@ The server exposes 14 read-only tools designed specifically for LLMs. Every resp
 | `el_get_fouls` | Fouls committed and drawn by type, grouped by player, team, or game; reconciles to the box score. |
 | `el_get_referee_stats` | A referee's season: games worked, fouls per game, home-win rate, and pace; unpivoted from the schedule's officiating crew. |
 | `el_get_roster` | A team's roster with biography (jersey, position, height, weight, birth date, country), linked to the box-score player by observed stat lines, never by name. |
+| `el_acb_find_games` | Find Liga Endesa games by season, team and date using source-native ACB match ids. |
+| `el_acb_get_player_games` | Liga Endesa player game logs with official minutes, points, shot attempts, rebounds, assists, turnovers, plus-minus and valuation. |
+| `el_acb_get_play_by_play` | Source-order Liga Endesa play-by-play for one ACB match, with event type, quarter, clock and running score. |
 
 ---
 
 ## 4. Generic MCP Client Setup
 
 The server remains a standard MCP server. The hosted and local transports publish the
-same 14 tools, input schemas, output schemas, and safety annotations. No ChatGPT-specific
+same 17 tools, input schemas, output schemas, and safety annotations. No ChatGPT-specific
 metadata is present in the tool registry.
 
 ### Hosted Streamable HTTP (recommended)
@@ -138,7 +141,7 @@ of the tool registry.
 3. Add a new MCP connection and enter
    `https://euroleague-analytics-mcp.fly.dev/mcp` as the public Streamable HTTP URL.
 4. Complete the OAuth sign-in.
-5. Review the discovered 14 tools and start a new conversation with the connection enabled.
+5. Review the discovered 17 tools and start a new conversation with the connection enabled.
 
 Developer mode availability can depend on the ChatGPT account and workspace policy. The
 current official flow is documented in OpenAI's
@@ -233,7 +236,7 @@ Both paths must agree with the published `<expected_answer>`.
 - **Privacy Policy**: [euroleague.egemenyucelen.me/privacy.html](https://euroleague.egemenyucelen.me/privacy.html)
 - **Support & FAQ**: [euroleague.egemenyucelen.me/support.html](https://euroleague.egemenyucelen.me/support.html)
 - **Sponsorship One-Pager**: [`docs/SPONSOR_ONE_PAGER.md`](docs/SPONSOR_ONE_PAGER.md)
-- **Scope of version 1**: [`docs/SCOPE.md`](docs/SCOPE.md) — what the fourteen tools do, what is left out on purpose, and why
+- **Scope of version 1**: [`docs/SCOPE.md`](docs/SCOPE.md) — what the seventeen tools do, what is left out on purpose, and why
 - **Decision Log**: [`DECISIONS.md`](DECISIONS.md)
 - **Phase Reports**: [`docs/`](docs/)
 

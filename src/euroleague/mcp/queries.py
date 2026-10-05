@@ -1492,3 +1492,210 @@ def get_roster(cursor: Cursor, arguments: dict[str, Any]) -> dict[str, Any]:
             "exclusion notes.",
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# ACB / Liga Endesa source-native query tools
+# ---------------------------------------------------------------------------
+
+
+def _acb_season_bounds(season: str) -> tuple[str, str]:
+    value = str(season).strip()
+    if len(value) == 4 and value.isdigit():
+        start_year = int(value)
+    elif len(value) == 7 and value[4] == "-" and value[:4].isdigit():
+        start_year = int(value[:4])
+    else:
+        raise ValueError("ACB season must look like 2025-26 or 2025.")
+    return f"{start_year}-07-01", f"{start_year + 1}-06-30"
+
+
+def _acb_coverage(cursor: Cursor, season: str) -> dict[str, Any]:
+    date_min, date_max = _acb_season_bounds(season)
+    cursor.execute(
+        "select count(*) as games, min(start_at)::date as first_game, "
+        "max(start_at)::date as last_game "
+        "from acb_game where competition_id = 1 and start_at::date between %s and %s",
+        (date_min, date_max),
+    )
+    row = _rows(cursor)[0]
+    games = row["games"] or 0
+    completeness = (
+        "complete"
+        if str(season).startswith("2025") and games >= 325
+        else ("in_progress" if games else "unknown")
+    )
+    return {
+        "league": "ACB / Liga Endesa",
+        "season": str(season),
+        "games_included": games,
+        "first_game": row["first_game"],
+        "last_game": row["last_game"],
+        "completeness": completeness,
+    }
+
+
+def _acb_excluded() -> dict[str, Any]:
+    return {
+        "games": 0,
+        "reasons": {},
+        "note": (
+            "Only competition_id=1 (Liga Endesa) is queried. Liga U, Minicopa, "
+            "Copa del Rey and Supercopa rows are outside these ACB league tools."
+        ),
+    }
+
+
+def acb_find_games(cursor: Cursor, arguments: dict[str, Any]) -> dict[str, Any]:
+    season = str(arguments["season"])
+    date_min, date_max = _acb_season_bounds(season)
+    limit = clamp_limit(arguments.get("limit"))
+    offset = validate_offset(arguments.get("offset"))
+
+    conditions = ["competition_id = 1", "start_at::date between %s and %s"]
+    params: list[Any] = [date_min, date_max]
+    if arguments.get("team"):
+        team = f"%{str(arguments['team']).strip()}%"
+        conditions.append("(home_team_name ilike %s or away_team_name ilike %s)")
+        params.extend([team, team])
+    if arguments.get("from_date"):
+        conditions.append("start_at::date >= %s")
+        params.append(str(arguments["from_date"]))
+    if arguments.get("to_date"):
+        conditions.append("start_at::date <= %s")
+        params.append(str(arguments["to_date"]))
+    where = " and ".join(conditions)
+
+    cursor.execute(f"select count(*) as total from acb_game where {where}", tuple(params))
+    total = _rows(cursor)[0]["total"]
+    cursor.execute(
+        f"select match_id, start_at, home_team_name, away_team_name, "
+        f"home_score, away_score, match_finished "
+        f"from acb_game where {where} order by start_at, match_id "
+        f"limit %s offset %s",
+        (*params, limit, offset),
+    )
+    rows = _rows(cursor)
+    return build_response(
+        rows=rows,
+        coverage=_acb_coverage(cursor, season),
+        excluded=_acb_excluded(),
+        limit=limit,
+        offset=offset,
+        total_available=total,
+        caveats=[
+            "This tool serves source-native Liga Endesa games only (competition_id=1).",
+        ],
+    )
+
+
+def acb_get_player_games(cursor: Cursor, arguments: dict[str, Any]) -> dict[str, Any]:
+    season = str(arguments["season"])
+    date_min, date_max = _acb_season_bounds(season)
+    limit = clamp_limit(arguments.get("limit"))
+    offset = validate_offset(arguments.get("offset"))
+
+    player = str(arguments["player"]).strip()
+    conditions = [
+        "g.competition_id = 1",
+        "g.start_at::date between %s and %s",
+        "(p.source_player_id = %s or p.display_name ilike %s)",
+    ]
+    params: list[Any] = [date_min, date_max, player, f"%{player}%"]
+    if arguments.get("team"):
+        team = f"%{str(arguments['team']).strip()}%"
+        conditions.append("(g.home_team_name ilike %s or g.away_team_name ilike %s)")
+        params.extend([team, team])
+    where = " and ".join(conditions)
+
+    cursor.execute(
+        f"select count(*) as total from acb_player_game p "
+        f"join acb_game g on g.match_id = p.match_id where {where}",
+        tuple(params),
+    )
+    total = _rows(cursor)[0]["total"]
+    cursor.execute(
+        f"select p.match_id, g.start_at, g.home_team_name, g.away_team_name, "
+        f"p.source_player_id, p.display_name, p.team_source_id, p.is_starter, "
+        f"(p.minutes_seconds / 60)::text || ':' || "
+        f"lpad((p.minutes_seconds % 60)::text, 2, '0') as play_time, "
+        f"p.points, p.two_made, p.two_attempted, p.three_made, p.three_attempted, "
+        f"p.free_throw_made, p.free_throw_attempted, "
+        f"(p.two_attempted + p.three_attempted) as field_goal_attempts, "
+        f"p.offensive_rebounds, p.defensive_rebounds, p.assists, p.steals, "
+        f"p.turnovers, p.blocks, p.fouls_committed, p.fouls_received, "
+        f"p.plus_minus, p.valuation "
+        f"from acb_player_game p join acb_game g on g.match_id = p.match_id "
+        f"where {where} order by g.start_at desc, p.match_id "
+        f"limit %s offset %s",
+        (*params, limit, offset),
+    )
+    rows = _rows(cursor)
+    return build_response(
+        rows=rows,
+        coverage=_acb_coverage(cursor, season),
+        excluded=_acb_excluded(),
+        limit=limit,
+        offset=offset,
+        total_available=total,
+        caveats=[
+            "play_time is the duration published in the ACB source box score.",
+            "Player name matching is a case-insensitive substring unless a source "
+            "player id is supplied.",
+        ],
+    )
+
+
+def acb_get_play_by_play(cursor: Cursor, arguments: dict[str, Any]) -> dict[str, Any]:
+    season = str(arguments["season"])
+    date_min, date_max = _acb_season_bounds(season)
+    match_id = str(arguments["match_id"])
+    limit = clamp_limit(arguments.get("limit"))
+    offset = validate_offset(arguments.get("offset"))
+
+    conditions = [
+        "e.match_id = %s",
+        "g.competition_id = 1",
+        "g.start_at::date between %s and %s",
+    ]
+    params: list[Any] = [match_id, date_min, date_max]
+    if arguments.get("quarter") is not None:
+        conditions.append("e.quarter = %s")
+        params.append(int(arguments["quarter"]))
+    if arguments.get("event_kind"):
+        conditions.append("e.event_kind = %s")
+        params.append(str(arguments["event_kind"]))
+    if arguments.get("from_index") is not None:
+        conditions.append("e.ingest_index >= %s")
+        params.append(int(arguments["from_index"]))
+    where = " and ".join(conditions)
+
+    cursor.execute(
+        f"select count(*) as total from acb_event e join acb_game g on g.match_id=e.match_id "
+        f"where {where}",
+        tuple(params),
+    )
+    total = _rows(cursor)[0]["total"]
+    cursor.execute(
+        f"select e.match_id, e.ingest_index, e.source_order, e.play_type, e.event_kind, "
+        f"e.source_player_id, e.local, e.quarter, e.minute as clock_minute, "
+        f"e.second as clock_second, e.score_home, e.score_away "
+        f"from acb_event e join acb_game g on g.match_id=e.match_id "
+        f"where {where} order by e.ingest_index limit %s offset %s",
+        (*params, limit, offset),
+    )
+    rows = _rows(cursor)
+    if not rows and offset == 0:
+        raise ValueError(f"No ACB play-by-play found for match_id {match_id} in season {season}.")
+    return build_response(
+        rows=rows,
+        coverage=_acb_coverage(cursor, season),
+        excluded=_acb_excluded(),
+        limit=limit,
+        offset=offset,
+        total_available=total,
+        caveats=[
+            "Rows are returned in source ingest order.",
+            "event_kind and play_type are source-native ACB event classifications.",
+        ],
+    )

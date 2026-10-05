@@ -31,6 +31,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "el_get_fouls",
     "el_get_referee_stats",
     "el_get_roster",
+    "el_acb_find_games",
+    "el_acb_get_player_games",
+    "el_acb_get_play_by_play",
 )
 
 _INCLUDE_QUARANTINED = {
@@ -50,6 +53,11 @@ _SEASON = {
         "(for example, E2024 is the 2024-25 season). Call el_describe_warehouse to see "
         "which seasons are loaded."
     ),
+}
+
+_ACB_SEASON = {
+    "type": "string",
+    "description": ("ACB season such as 2025-26, meaning the season ending in spring 2026."),
 }
 
 _LIMIT = {
@@ -811,6 +819,78 @@ def build_registry(
                 required=["season"],
             ),
             query=queries.get_roster,
+        ),
+        tool(
+            name="el_acb_find_games",
+            title="Find ACB Liga Endesa games",
+            description=(
+                "Find source-native Liga Endesa games in the ACB warehouse. "
+                "Use season like 2025-26. Only competition_id=1 is included, so Liga U, "
+                "Minicopa, Copa del Rey and Supercopa are excluded from this tool."
+            ),
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
+                    "team": {"type": "string", "description": "Optional team name substring."},
+                    "from_date": {
+                        "type": "string",
+                        "description": "Earliest game date, YYYY-MM-DD.",
+                    },
+                    "to_date": {"type": "string", "description": "Latest game date, YYYY-MM-DD."},
+                    "limit": _LIMIT,
+                    "offset": _OFFSET,
+                },
+                required=["season"],
+            ),
+            query=queries.acb_find_games,
+        ),
+        tool(
+            name="el_acb_get_player_games",
+            title="ACB player game logs",
+            description=(
+                "Get one player game-by-game Liga Endesa box score: play time, points, "
+                "2P/3P/FT makes and attempts, total field-goal attempts, rebounds, assists, "
+                "steals, turnovers, blocks, fouls, plus-minus and valuation."
+            ),
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
+                    "player": {
+                        "type": "string",
+                        "description": "ACB source player id or player name.",
+                    },
+                    "team": {"type": "string", "description": "Optional team name filter."},
+                    "limit": _LIMIT,
+                    "offset": _OFFSET,
+                },
+                required=["season", "player"],
+            ),
+            query=queries.acb_get_player_games,
+        ),
+        tool(
+            name="el_acb_get_play_by_play",
+            title="ACB game play-by-play",
+            description=(
+                "Get source-order play-by-play for one Liga Endesa match. Use match_id "
+                "from el_acb_find_games. Returns ACB event type, player id, quarter, "
+                "clock and score."
+            ),
+            input_schema=_schema(
+                {
+                    "season": _ACB_SEASON,
+                    "match_id": {
+                        "type": "string",
+                        "description": "ACB match id from el_acb_find_games.",
+                    },
+                    "quarter": {"type": "integer", "description": "Optional quarter filter."},
+                    "event_kind": {"type": "string", "description": "Optional ACB event kind."},
+                    "from_index": {"type": "integer", "description": "Start at this ingest_index."},
+                    "limit": _LIMIT,
+                    "offset": _OFFSET,
+                },
+                required=["season", "match_id"],
+            ),
+            query=queries.acb_get_play_by_play,
         ),
     ]
     return {tool.name: tool for tool in tools}
