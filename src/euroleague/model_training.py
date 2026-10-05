@@ -560,6 +560,15 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           and not g.excluded_by_default
         group by 1, 2, 3
     ),
+    game_script_context as (
+        select
+            e.season_code,
+            e.gamecode,
+            bool_or(e.period > 4) as went_overtime
+        from game_event e
+        join requested_seasons rs using (season_code)
+        group by 1, 2
+    ),
     player_base as (
         select
             p.season_code,
@@ -589,6 +598,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 p.field_goals_attempted - coalesce(sc.situational_fga, 0),
                 0
             ) as context_neutral_fga,
+            p.fouls_commited,
+            tg.points - tg.opponent_points as team_final_margin,
+            abs(tg.points - tg.opponent_points) >= 15 as game_was_blowout,
+            abs(tg.points - tg.opponent_points) <= 5 as game_was_close,
+            coalesce(gc.went_overtime, false) as game_went_overtime,
             p.points,
             p.field_goals_attempted,
             p.three_pointers_attempted,
@@ -637,6 +651,9 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on sc.season_code = p.season_code
          and sc.gamecode = p.gamecode
          and sc.player_id = p.player_id
+        left join game_script_context gc
+          on gc.season_code = p.season_code
+         and gc.gamecode = p.gamecode
         left join pbp_possession_game pg
           on pg.season_code = p.season_code
          and pg.gamecode = p.gamecode
@@ -647,6 +664,119 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
          and sg.player_id = p.player_id
         where p.seconds_official > 0
           and not p.excluded_by_default
+    ),
+    player_role_baseline as (
+        select
+            *,
+            lag(is_starter) over role_all as role_prev_starter,
+            round(
+                avg(seconds_played::numeric / 60.0) over role_w5,
+                3
+            ) as role_pre_l5_minutes,
+            round(
+                avg(field_goals_attempted::numeric) over role_w5,
+                3
+            ) as role_pre_l5_fga
+        from player_base
+        window
+            role_all as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+            ),
+            role_w5 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 5 preceding and 1 preceding
+            )
+    ),
+    player_role_events as (
+        select
+            *,
+            case
+                when role_pre_l5_minutes is not null
+                 and seconds_played::numeric / 60.0
+                    >= greatest(role_pre_l5_minutes + 5.0, role_pre_l5_minutes * 1.20)
+                    then 1
+                else 0
+            end as minute_spike_event,
+            case
+                when role_pre_l5_minutes is not null
+                 and seconds_played::numeric / 60.0
+                    <= least(role_pre_l5_minutes - 5.0, role_pre_l5_minutes * 0.80)
+                    then 1
+                else 0
+            end as minute_drop_event,
+            case
+                when role_pre_l5_fga is not null
+                 and field_goals_attempted
+                    >= greatest(role_pre_l5_fga + 3.0, role_pre_l5_fga * 1.30)
+                    then 1
+                else 0
+            end as fga_spike_event,
+            case
+                when role_pre_l5_fga is not null
+                 and field_goals_attempted
+                    <= least(role_pre_l5_fga - 3.0, role_pre_l5_fga * 0.70)
+                    then 1
+                else 0
+            end as fga_drop_event,
+            case
+                when role_prev_starter is not null
+                 and is_starter is distinct from role_prev_starter
+                    then 1
+                else 0
+            end as starter_change_event,
+            case
+                when role_prev_starter = false and is_starter
+                    then 1
+                else 0
+            end as starter_promotion_event,
+            case
+                when role_prev_starter = true and not is_starter
+                    then 1
+                else 0
+            end as starter_demotion_event
+        from player_role_baseline
+    ),
+    player_role_reasons as (
+        select
+            *,
+            case
+                when minute_drop_event = 1 and fouls_commited >= 4 then 1 else 0
+            end as minute_drop_foul_context,
+            case
+                when minute_drop_event = 1 and game_was_blowout then 1 else 0
+            end as minute_drop_blowout_context,
+            case
+                when minute_drop_event = 1 and starter_demotion_event = 1 then 1 else 0
+            end as minute_drop_demotion_context,
+            case
+                when minute_spike_event = 1 and game_went_overtime then 1 else 0
+            end as minute_spike_overtime_context,
+            case
+                when minute_spike_event = 1 and game_was_close then 1 else 0
+            end as minute_spike_close_game_context,
+            case
+                when minute_spike_event = 1 and starter_promotion_event = 1 then 1 else 0
+            end as minute_spike_promotion_context,
+            case
+                when fga_spike_event = 1
+                 and (
+                    situational_fga >= 2
+                    or situational_fga::numeric
+                        / nullif(field_goals_attempted, 0) >= 0.25
+                 )
+                    then 1
+                else 0
+            end as fga_spike_situational_context,
+            case
+                when fga_spike_event = 1
+                 and context_neutral_fga
+                    >= greatest(role_pre_l5_fga + 3.0, role_pre_l5_fga * 1.30)
+                    then 1
+                else 0
+            end as fga_spike_role_expansion_context
+        from player_role_events
     ),
     player_hand_baseline as (
         select
@@ -660,7 +790,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 as hand_pre_l5_minutes,
             round(avg(field_goals_attempted::numeric) over hand_w5, 3)
                 as hand_pre_l5_fga
-        from player_base
+        from player_role_reasons
         window
             hand_w5 as (
                 partition by player_id
