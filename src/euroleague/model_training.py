@@ -497,6 +497,69 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             rows between 5 preceding and 1 preceding
         )
     ),
+    event_score_context as (
+        select
+            e.*,
+            lag(e.score_home) over event_order as pre_event_score_home,
+            lag(e.score_away) over event_order as pre_event_score_away
+        from game_event e
+        join requested_seasons rs using (season_code)
+        window event_order as (
+            partition by e.season_code, e.gamecode
+            order by e.ingest_index
+        )
+    ),
+    player_game_shot_context as (
+        select
+            e.season_code,
+            e.gamecode,
+            e.player_id,
+            count(*) as pbp_fga,
+            count(*) filter (
+                where vp.seconds_remaining_at_start <= 180
+                  and case
+                        when e.codeteam = g.home_team_code
+                            then coalesce(e.pre_event_score_home, e.score_home)
+                               - coalesce(e.pre_event_score_away, e.score_away)
+                        else coalesce(e.pre_event_score_away, e.score_away)
+                           - coalesce(e.pre_event_score_home, e.score_home)
+                      end <= -4
+            ) as late_trailing_fga,
+            count(*) filter (
+                where e.elapsed_seconds_raw is not null
+                  and vp.start_seconds_elapsed is not null
+                  and e.elapsed_seconds_raw - vp.start_seconds_elapsed between 18 and 60
+            ) as late_clock_proxy_fga,
+            count(*) filter (
+                where (
+                    vp.seconds_remaining_at_start <= 180
+                    and case
+                          when e.codeteam = g.home_team_code
+                              then coalesce(e.pre_event_score_home, e.score_home)
+                                 - coalesce(e.pre_event_score_away, e.score_away)
+                          else coalesce(e.pre_event_score_away, e.score_away)
+                             - coalesce(e.pre_event_score_home, e.score_home)
+                        end <= -4
+                )
+                or (
+                    e.elapsed_seconds_raw is not null
+                    and vp.start_seconds_elapsed is not null
+                    and e.elapsed_seconds_raw - vp.start_seconds_elapsed between 18 and 60
+                )
+            ) as situational_fga
+        from event_score_context e
+        join v_game g
+          on g.season_code = e.season_code
+         and g.gamecode = e.gamecode
+        left join v_possession vp
+          on vp.season_code = e.season_code
+         and vp.gamecode = e.gamecode
+         and vp.possession_index = e.possession_index
+        where e.playtype in ('2FGM', '2FGA', '3FGM', '3FGA')
+          and e.player_id is not null
+          and not g.excluded_by_default
+        group by 1, 2, 3
+    ),
     player_base as (
         select
             p.season_code,
@@ -518,6 +581,14 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             im.inferred_guard_share as matchup_guard_share,
             im.inferred_forward_share as matchup_forward_share,
             im.inferred_center_share as matchup_center_share,
+            coalesce(sc.pbp_fga, 0) as pbp_fga,
+            coalesce(sc.late_trailing_fga, 0) as late_trailing_fga,
+            coalesce(sc.late_clock_proxy_fga, 0) as late_clock_proxy_fga,
+            coalesce(sc.situational_fga, 0) as situational_fga,
+            greatest(
+                p.field_goals_attempted - coalesce(sc.situational_fga, 0),
+                0
+            ) as context_neutral_fga,
             p.points,
             p.field_goals_attempted,
             p.three_pointers_attempted,
@@ -562,6 +633,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on im.season_code = p.season_code
          and im.gamecode = p.gamecode
          and im.player_id = p.player_id
+        left join player_game_shot_context sc
+          on sc.season_code = p.season_code
+         and sc.gamecode = p.gamecode
+         and sc.player_id = p.player_id
         left join pbp_possession_game pg
           on pg.season_code = p.season_code
          and pg.gamecode = p.gamecode
