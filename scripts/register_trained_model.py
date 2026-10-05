@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         "candidate_results": report["candidate_results"],
         "validation_leaderboard": report["validation_leaderboard"],
         "selected_model": selected_model,
+        "auxiliary_targets": report.get("auxiliary_targets", {}),
     }
 
     database_settings = DatabaseSettings.from_env()
