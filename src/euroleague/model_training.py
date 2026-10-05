@@ -289,7 +289,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 3
             ) as pre_l10_pbp_on_def_rating,
             round(
-                sum(pbp_transition_offensive_possessions)::numeric over w10
+                (sum(pbp_transition_offensive_possessions) over w10)::numeric
                 / nullif(sum(pbp_offensive_possessions) over w10, 0),
                 4
             ) as pre_l10_pbp_transition_offense_share,
