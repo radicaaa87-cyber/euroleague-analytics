@@ -287,7 +287,7 @@ def candidate_specs() -> tuple[ModelCandidate, ...]:
 def build_model(family: str, params: dict[str, Any]) -> Any:
     """Construct one estimator; heavy ML libraries are imported only for training."""
     if family == "hist_gradient_boosting":
-        estimator = getattr(import_module("sklearn.ensemble"), "HistGradientBoostingRegressor")
+        estimator = import_module("sklearn.ensemble").HistGradientBoostingRegressor
         return estimator(
             loss="squared_error",
             random_state=42,
@@ -296,7 +296,7 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "xgboost":
-        estimator = getattr(import_module("xgboost"), "XGBRegressor")
+        estimator = import_module("xgboost").XGBRegressor
         return estimator(
             objective="reg:squarederror",
             tree_method="hist",
@@ -307,7 +307,7 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "catboost":
-        estimator = getattr(import_module("catboost"), "CatBoostRegressor")
+        estimator = import_module("catboost").CatBoostRegressor
         return estimator(
             loss_function="RMSE",
             random_seed=42,
@@ -318,7 +318,7 @@ def build_model(family: str, params: dict[str, Any]) -> Any:
         )
 
     if family == "lightgbm":
-        estimator = getattr(import_module("lightgbm"), "LGBMRegressor")
+        estimator = import_module("lightgbm").LGBMRegressor
         return estimator(
             objective="regression",
             random_state=42,
