@@ -112,6 +112,9 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "rows between 3 preceding and 1 preceding" in sql
     assert "rows between 5 preceding and 1 preceding" in sql
     assert "rows between 10 preceding and 1 preceding" in sql
+    assert "partition by player_id" in sql
+    assert "pre_current_season_games" in sql
+    assert "partition by tg.team_code" in sql
     assert "target_points" in sql
     assert "v_possession" in sql
     assert "v_lineup_player" in sql
