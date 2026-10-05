@@ -1,4 +1,4 @@
-# Unified Player Points MODEL 0.10 — EuroLeague + ACB
+# Unified Player Points MODEL 0.11 — EuroLeague + ACB
 
 Status: LOCKED WORKING SPEC  
 Date: 2026-10-05
@@ -23,7 +23,7 @@ A NO BET player may score far over or under the line without counting as a betti
 
 ## Model order
 
-**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → STATE-FIRST BASELINE → NEW TEAM / NEW SEASON ROLE TRANSLATION → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → TEAM CONSTRAINTS → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT VOLATILITY → VARIANCE DRIVER ATTRIBUTION → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → SCENARIO MIXTURE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → SENSITIVITY / ROBUSTNESS → CALIBRATION → EDGE → A BET / WATCH / NO BET**
+**ROTATION STATE → ROLE → AVAILABILITY / INJURY IMPACT → CONDITIONAL ROLE SAMPLE → STATE-FIRST BASELINE → SMALL-N SHRINKAGE → NEW TEAM / NEW SEASON ROLE TRANSLATION → MINUTE REDISTRIBUTION → USAGE / ATT REDISTRIBUTION → TEAM CONSTRAINTS → STATUS CONFIDENCE → ROLE CONFIDENCE → MINUTE DISTRIBUTION → FGA/MIN DISTRIBUTION → ATT DISTRIBUTION (FGA / 2PA / 3PA / FTA) → ATT STABILITY → ATT VOLATILITY → VARIANCE DRIVER ATTRIBUTION → VARIANCE EXPLAINED → TODAY TRIGGER CONFIDENCE → SCENARIO MIXTURE → VARIANCE MODULE → EFFICIENCY → MATCHUP / PACE → LOW / BASE / HIGH SCENARIO → PTS DISTRIBUTION → MECHANICAL SENSITIVITY / ROBUSTNESS → CALIBRATION → STABLE EDGE → A BET / WATCH / NO BET**
 
 ## 1. ROLE
 
@@ -107,6 +107,249 @@ If the expected redistribution cannot be supported, widen the distribution and l
 
 
 
+
+
+
+
+## MODEL 0.11 — SMALL-N SHRINKAGE, MECHANICAL ROBUSTNESS AND STABLE EDGE
+
+MODEL 0.11 fixes a selection failure seen when a very small exact-state sample produced a large apparent edge and was allowed to dominate a longer stable role history.
+
+The governing principle is:
+
+> Prefer the largest **stable** edge, not the largest central edge.
+
+### 1. SMALL-N SHRINKAGE ENGINE
+
+Exact-state and same-matchup samples remain highly relevant, but their weight must depend on effective sample size.
+
+For each projected component separately:
+
+- MIN,
+- FGA/min,
+- 3PA/min,
+- FTA/min,
+
+calculate a stable-role baseline and a conditional-state estimate.
+
+Use:
+
+**conditional_posterior = lambda × conditional_state + (1 − lambda) × stable_role_baseline**
+
+with:
+
+**lambda = n_eff / (n_eff + K)**
+
+Default provisional prior strength:
+
+**K = 4**
+
+This gives approximately:
+
+- n_eff = 1 → 20% conditional-state weight
+- n_eff = 2 → 33%
+- n_eff = 4 → 50%
+- n_eff = 8 → 67%
+- n_eff = 12 → 75%
+
+These are starting values to be calibrated on future blind samples; they must not be retuned to fit one historical slate.
+
+#### Effective sample size
+
+Use evidence-quality weights when building n_eff:
+
+- exact same rotation / same role state = 1.00 per game,
+- same primary role trigger = 0.65,
+- comparable role state = 0.40,
+- generic recent game = baseline only, not conditional n_eff.
+
+Thus two exact-state games do not receive full authority merely because they are the most recent games.
+
+### 2. BASELINE SELECTION FOR SHRINKAGE
+
+The shrinkage target must be the best stable pre-game role baseline, not automatically the season average.
+
+Priority:
+
+1. stable current-role sample,
+2. stable recent-role sample,
+3. season role sample,
+4. previous-team prior only when MODEL 0.10 role-translation rules allow it.
+
+The baseline must itself exclude known outdated roles.
+
+### 3. SMALL-N SHOCK RULE
+
+If the conditional sample changes FGA/min, 3PA/min, FTA/min or MIN materially relative to baseline but n_eff < 4:
+
+- treat the move as a possible state shift, not a confirmed new level,
+- shrink the mean toward baseline,
+- preserve a scenario branch in which the player regresses toward baseline,
+- do not let the small sample alone create A BET.
+
+If the directional shift is repeated and supported by an independent pre-game mechanism such as a confirmed absence or coach-defined role, the conditional state may still qualify for A BET after robustness testing.
+
+### 4. ATT STABILITY SCORE
+
+Track a separate **ATT STABILITY SCORE (0–100)**.
+
+It measures how repeatable the player's opportunity path is after conditioning on today's known state.
+
+Primary inputs:
+
+- stability of MIN,
+- stability of FGA/min,
+- stability of FTA/min,
+- stability of 3PA share where three-point dependence is material,
+- agreement between stable baseline and conditional-state estimate,
+- repeatability of the identified role/trigger.
+
+A high score means the opportunity path is repeatable.
+A low score means the central projection depends on a fragile or poorly repeated state.
+
+The score is conceptually different from VARIANCE EXPLAINED:
+
+- a player can be volatile but have HIGH explained variance,
+- a player can have a narrow recent sample but LOW stability because n is tiny,
+- a player can have moderate raw variance but HIGH stability after conditioning on role.
+
+### 5. STABILITY SELECTION RULE
+
+The model must no longer rank candidates primarily by RAW EDGE.
+
+Selection priority:
+
+1. positive market value after scenario mixture,
+2. role / state support,
+3. robustness,
+4. ATT stability,
+5. raw central edge.
+
+A smaller edge with stable MIN and ATT can rank above a larger edge built on a fragile two-game spike.
+
+For A BET:
+
+- ATT STABILITY should normally be >= 60,
+- or, if below 60, volatility must be HIGHLY explained with a HIGH-confidence trigger and the candidate must remain +EV under the regressed baseline scenario.
+
+If ATT STABILITY < 45 and the favorable edge depends on the unstable state, maximum classification is WATCH.
+
+### 6. MECHANICAL SCENARIO ROBUSTNESS
+
+BET ROBUSTNESS SCORE must be calculated from an explicit pre-game scenario table.
+
+Manual or narrative assignment of a score such as 82/100 is forbidden.
+
+For every serious candidate define mutually coherent scenarios with weights summing to 1.00.
+
+Each scenario must specify at minimum:
+
+- MIN state,
+- FGA/min state,
+- FTA/min state,
+- material 3PA state where relevant,
+- availability / role state,
+- scenario weight.
+
+For each scenario calculate the selected-side probability and:
+
+**EV_s = P(win | scenario) × decimal_odds − 1**
+
+Then calculate:
+
+**BRS = 100 × Σ[w_s × I(EV_s > 0)]**
+
+where I() equals 1 when that scenario remains positive EV and 0 otherwise.
+
+Also calculate:
+
+**MIXTURE EV = Σ[w_s × EV_s]**
+
+and:
+
+**MIXTURE P(side) = Σ[w_s × P(side | scenario)]**
+
+The scenario table, BRS and MIXTURE EV must be reproducible from the locked pre-game inputs.
+
+### 7. ROBUSTNESS ANTI-GAMING RULE
+
+Scenario weights may not be chosen merely to preserve a bet.
+
+Weights must come from:
+
+- observed state frequency,
+- availability confidence,
+- role evidence,
+- same-state history,
+- explicit pre-game information.
+
+If the model cannot justify scenario weights, the candidate is capped at WATCH.
+
+If any unresolved plausible scenario with weight >=25% has negative EV, the candidate cannot be A BET.
+
+### 8. STABLE EDGE
+
+Define two edges:
+
+**CENTRAL EDGE = central projection − market line**
+
+and
+
+**STABLE EDGE = edge that remains after small-N shrinkage and scenario mixture.**
+
+A BET is selected from STABLE EDGE, not CENTRAL EDGE.
+
+The central projection is still reported, but cannot by itself promote a candidate.
+
+Required output:
+
+- raw / central projection,
+- shrinkage-adjusted projection,
+- mixture probability,
+- mixture EV,
+- BRS,
+- ATT STABILITY,
+- classification.
+
+### 9. EXACT-STATE SAMPLE RULE
+
+Exact-state data remains the highest-quality contextual evidence, but sample size controls authority.
+
+Guideline:
+
+- n_eff < 2: evidence only,
+- n_eff 2–3.9: meaningful but heavily shrunk,
+- n_eff 4–7.9: moderate conditional authority,
+- n_eff >= 8: strong conditional authority if role remains comparable.
+
+An exact-state sample may receive more weight than a generic sample, but never unlimited weight.
+
+### 10. SELECTION FAILURE AUDIT
+
+After each blind slate, record whether a failed A BET was caused by:
+
+- SMALL-N OVERWEIGHT,
+- STABILITY OVERRATED,
+- SCENARIO WEIGHTS WRONG,
+- BRS CALCULATION FAILURE,
+- STATE / ROLE MISS,
+- MIN MISS,
+- ATT-RATE MISS,
+- EFFICIENCY / REALIZATION VARIANCE.
+
+Do not change the rule after one loss. Promote changes only after repeated independent evidence.
+
+### 11. IMPLEMENTATION REQUIREMENT
+
+A simulation is not considered a full MODEL 0.11 simulation unless:
+
+- shrinkage is numerically applied when conditional n_eff is small,
+- ATT STABILITY is calculated or explicitly derived from locked inputs,
+- scenario weights are shown or stored,
+- BRS is mechanically calculated from scenario EVs,
+- A BET / WATCH / NO BET comes from the rules above.
+
+If these calculations are approximated narratively, label the run as **MODEL 0.11 PARTIAL**, not as a full model test.
 
 
 ## MODEL 0.10 — NEW TEAM / NEW SEASON ROLE-TRANSLATION LAYER
@@ -223,7 +466,10 @@ A BET requires:
 - team offensive hierarchy reconciled,
 - no unresolved beneficiary conflict,
 - HIGH or strong MEDIUM role-translation confidence,
-- BET ROBUSTNESS SCORE >= 85.
+- BET ROBUSTNESS SCORE
+- ATT STABILITY SCORE
+- shrinkage-adjusted projection
+- MIXTURE EV >= 85.
 
 #### 5+ current-team competitive games in stable role
 
@@ -1223,7 +1469,10 @@ Requires all of the following:
 - no HIGH unexplained ATT volatility,
 - team constraints reconciled,
 - material scenario branches modeled,
-- BET ROBUSTNESS SCORE >= 75,
+- small-N shrinkage applied where required,
+- mechanically calculated BET ROBUSTNESS SCORE >= 75,
+- ATT STABILITY normally >= 60 unless the explained-volatility exception is satisfied,
+- positive MIXTURE EV,
 - no hard-gate violation.
 
 #### WATCH
