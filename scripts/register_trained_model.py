@@ -8,7 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import psycopg
-import sklearn
 
 from euroleague.config import DatabaseSettings, StorageSettings
 from euroleague.model_registry import (
@@ -42,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     model_bytes = args.model.read_bytes()
     checksum = file_sha256(args.model)
     path = artifact_path(args.family, args.version)
+    selected_model = report["selected_model"]
 
     storage_settings = replace(
         StorageSettings.from_env(),
@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         "rows": report["rows"],
         "feature_count": report["feature_count"],
         "candidate_results": report["candidate_results"],
+        "validation_leaderboard": report["validation_leaderboard"],
+        "selected_model": selected_model,
     }
 
     database_settings = DatabaseSettings.from_env()
@@ -81,9 +83,9 @@ def main(argv: list[str] | None = None) -> int:
             artifact_sha256=checksum,
             artifact_size_bytes=len(model_bytes),
             git_commit=args.git_commit,
-            framework="scikit-learn",
-            framework_version=sklearn.__version__,
-            model_class="HistGradientBoostingRegressor",
+            framework=selected_model["framework"],
+            framework_version=selected_model["framework_version"],
+            model_class=selected_model["model_class"],
             trained_at=report["created_at"],
             train_seasons=list(split["final_train"]),
             validation_seasons=list(split["validation"]),
@@ -104,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
                 "artifact_path": path,
                 "artifact_sha256": checksum,
                 "artifact_size_bytes": len(model_bytes),
+                "estimator_family": selected_model["family"],
+                "model_class": selected_model["model_class"],
             },
             sort_keys=True,
         )

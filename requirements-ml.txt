@@ -2,3 +2,6 @@
 # Training runs in a separate GitHub Actions workflow so production serving
 # stays lightweight.
 scikit-learn==1.9.1
+xgboost==3.4.1
+catboost==1.2.10
+lightgbm==4.7.0

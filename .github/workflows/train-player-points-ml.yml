@@ -32,7 +32,7 @@ jobs:
           uv pip install --python .venv\Scripts\python.exe -r requirements.txt
           uv pip install --python .venv\Scripts\python.exe -r requirements-ml.txt
           uv pip install --python .venv\Scripts\python.exe -e .
-      - name: Train E2023-E2024 and blind-test E2025
+      - name: Benchmark four model families and blind-test the validation winner
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         shell: powershell

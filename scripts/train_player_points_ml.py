@@ -1,16 +1,17 @@
-"""Train and blind-test the EuroLeague player-points ML model.
+"""Benchmark four tree-boosting families for EuroLeague player points.
 
 The script reads the hosted warehouse directly through its read-only database
 connection. It never pages play-by-play through ChatGPT/MCP.
 
-Default split:
+Locked split:
     E2023 (2023/24) -> tuning train
-    E2024 (2024/25) -> validation
-    E2023 + E2024   -> final train
-    E2025 (2025/26) -> blind test
+    E2024 (2024/25) -> validation and model-family selection
+    E2023 + E2024   -> final train for the locked validation winner
+    E2025 (2025/26) -> one blind test of that locked winner
 
-The feature query may read all three seasons so the first games of a new season
-can use legitimate prior-season history. Test targets are never used for tuning.
+HistGradientBoosting, XGBoost, CatBoost and LightGBM all receive the same
+feature matrix and the same split. E2025 never changes the selected family or
+its parameters.
 """
 
 from __future__ import annotations
@@ -25,12 +26,16 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from euroleague.config import DatabaseSettings
 from euroleague.mcp.db import connect
+from euroleague.ml_benchmark import (
+    build_model,
+    candidate_specs,
+    runtime_model_identity,
+)
 from euroleague.model_training import model_feature_columns, training_dataset_sql
 
 DEFAULT_TRAIN_SEASON = "E2023"
@@ -40,7 +45,10 @@ DEFAULT_TEST_SEASON = "E2025"
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Train on E2023/E2024 and blind-test player points on E2025."
+        description=(
+            "Benchmark HistGBR/XGBoost/CatBoost/LightGBM on E2024 validation, "
+            "then blind-test the locked winner on E2025."
+        )
     )
     parser.add_argument("--train-season", default=DEFAULT_TRAIN_SEASON)
     parser.add_argument("--validation-season", default=DEFAULT_VALIDATION_SEASON)
@@ -75,48 +83,6 @@ def _metric_summary(actual: np.ndarray, predicted: np.ndarray) -> dict[str, floa
         "within_4_points": float(np.mean(absolute <= 4.0)),
         "mean_error": float(np.mean(predicted - actual)),
     }
-
-
-def _candidate_models() -> list[dict[str, Any]]:
-    return [
-        {
-            "learning_rate": 0.05,
-            "max_iter": 300,
-            "max_leaf_nodes": 15,
-            "min_samples_leaf": 20,
-            "l2_regularization": 1.0,
-        },
-        {
-            "learning_rate": 0.04,
-            "max_iter": 400,
-            "max_leaf_nodes": 31,
-            "min_samples_leaf": 25,
-            "l2_regularization": 2.0,
-        },
-        {
-            "learning_rate": 0.06,
-            "max_iter": 250,
-            "max_leaf_nodes": 10,
-            "min_samples_leaf": 15,
-            "l2_regularization": 0.5,
-        },
-        {
-            "learning_rate": 0.035,
-            "max_iter": 450,
-            "max_leaf_nodes": 20,
-            "min_samples_leaf": 35,
-            "l2_regularization": 3.0,
-        },
-    ]
-
-
-def _new_model(params: dict[str, Any]) -> HistGradientBoostingRegressor:
-    return HistGradientBoostingRegressor(
-        loss="squared_error",
-        random_state=42,
-        early_stopping=False,
-        **params,
-    )
 
 
 def _fetch_dataset(
@@ -223,23 +189,49 @@ def main(argv: list[str] | None = None) -> int:
         if not np.any(mask):
             raise RuntimeError(f"No rows available for {label} split.")
 
-    candidates: list[dict[str, Any]] = []
-    best_params: dict[str, Any] | None = None
-    best_mae = math.inf
+    candidate_results: list[dict[str, Any]] = []
+    best_by_family: dict[str, dict[str, Any]] = {}
+    selected: dict[str, Any] | None = None
+    selected_mae = math.inf
 
-    for params in _candidate_models():
-        model = _new_model(params)
+    for spec in candidate_specs():
+        model = build_model(spec.family, spec.params)
         model.fit(x[tuning_train_mask], y[tuning_train_mask])
         validation_prediction = model.predict(x[validation_mask])
         metrics = _metric_summary(y[validation_mask], validation_prediction)
-        candidates.append({"params": params, "validation": metrics})
-        if metrics["mae"] < best_mae:
-            best_mae = metrics["mae"]
-            best_params = params
+        result = {
+            "candidate_id": spec.candidate_id,
+            "family": spec.family,
+            "params": spec.params,
+            "validation": metrics,
+        }
+        candidate_results.append(result)
 
-    assert best_params is not None
+        family_best = best_by_family.get(spec.family)
+        if family_best is None or metrics["mae"] < family_best["validation"]["mae"]:
+            best_by_family[spec.family] = result
 
-    final_model = _new_model(best_params)
+        if metrics["mae"] < selected_mae:
+            selected_mae = metrics["mae"]
+            selected = result
+
+    assert selected is not None
+
+    validation_leaderboard = sorted(
+        (
+            {
+                "family": family,
+                "candidate_id": result["candidate_id"],
+                "params": result["params"],
+                "validation": result["validation"],
+            }
+            for family, result in best_by_family.items()
+        ),
+        key=lambda item: item["validation"]["mae"],
+    )
+
+    selected_identity = runtime_model_identity(selected["family"])
+    final_model = build_model(selected["family"], selected["params"])
     final_model.fit(x[final_train_mask], y[final_train_mask])
     test_prediction = final_model.predict(x[test_mask])
     test_metrics = _metric_summary(y[test_mask], test_prediction)
@@ -249,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
     baseline_metrics = _metric_summary(y[test_mask], baseline_prediction)
 
     # The blind test has already been scored at this point. Permutation
-    # importance is diagnostic only and cannot change model selection.
+    # importance is diagnostic only and cannot change family or parameter selection.
     test_x = x[test_mask]
     test_y = y[test_mask]
     if len(test_y) > 2500:
@@ -307,14 +299,21 @@ def main(argv: list[str] | None = None) -> int:
         },
         "feature_count": len(feature_names),
         "features": feature_names,
-        "candidate_results": candidates,
-        "selected_params": best_params,
+        "candidate_results": candidate_results,
+        "validation_leaderboard": validation_leaderboard,
+        "selected_model": {
+            **selected_identity,
+            "candidate_id": selected["candidate_id"],
+        },
+        "selected_params": selected["params"],
         "blind_test": test_metrics,
         "l10_points_baseline": baseline_metrics,
         "mae_improvement_vs_l10": float(baseline_metrics["mae"] - test_metrics["mae"]),
         "permutation_importance": ranked_importance,
         "notes": [
-            "Model selection uses E2024 validation only; E2025 is not used for tuning.",
+            "All four model families use the identical feature matrix and chronological split.",
+            "Family and parameter selection use E2024 validation only.",
+            "Only the locked E2024 validation winner is scored on the E2025 blind test.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
             "Bookmaker lines are excluded; betting EDGE is evaluated later by "
@@ -323,15 +322,18 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "
+", encoding="utf-8")
 
     args.model.parent.mkdir(parents=True, exist_ok=True)
     with args.model.open("wb") as handle:
         pickle.dump(
             {
                 "model": final_model,
+                "model_family": selected["family"],
+                "model_identity": selected_identity,
                 "features": feature_names,
-                "selected_params": best_params,
+                "selected_params": selected["params"],
                 "minutes_basis": args.minutes_basis,
                 "trained_seasons": [args.train_season, args.validation_season],
                 "blind_test_season": args.test_season,
@@ -349,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         "team_code",
         "opponent_team_code",
     ]
-    test_rows = [row for row, selected in zip(rows, test_mask, strict=True) if selected]
+    test_rows = [row for row, selected_row in zip(rows, test_mask, strict=True) if selected_row]
     metadata = [{field: row[index[field]] for field in metadata_fields} for row in test_rows]
     _write_predictions(
         args.predictions,
@@ -359,8 +361,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(json.dumps(report["rows"], sort_keys=True))
+    print(json.dumps(report["validation_leaderboard"], sort_keys=True))
     print(json.dumps(report["blind_test"], sort_keys=True))
-    print(f"selected_params={json.dumps(best_params, sort_keys=True)}")
+    print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
+    print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
     print(f"features={len(feature_names)}")
     return 0
 
