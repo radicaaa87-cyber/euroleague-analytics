@@ -118,6 +118,10 @@ def _write_predictions(
     metadata: list[dict[str, Any]],
     actual: np.ndarray,
     predicted: np.ndarray,
+    actual_minutes: np.ndarray,
+    predicted_minutes: np.ndarray,
+    actual_fga: np.ndarray,
+    predicted_fga: np.ndarray,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -130,6 +134,10 @@ def _write_predictions(
         "player_name",
         "team_code",
         "opponent_team_code",
+        "actual_minutes",
+        "predicted_minutes",
+        "actual_fga",
+        "predicted_fga",
         "actual_points",
         "predicted_points",
         "prediction_error",
@@ -138,10 +146,23 @@ def _write_predictions(
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for meta, y_true, y_pred in zip(metadata, actual, predicted, strict=True):
+        for meta, y_true, y_pred, m_true, m_pred, f_true, f_pred in zip(
+            metadata,
+            actual,
+            predicted,
+            actual_minutes,
+            predicted_minutes,
+            actual_fga,
+            predicted_fga,
+            strict=True,
+        ):
             writer.writerow(
                 {
                     **meta,
+                    "actual_minutes": round(float(m_true), 4),
+                    "predicted_minutes": round(float(m_pred), 4),
+                    "actual_fga": round(float(f_true), 4),
+                    "predicted_fga": round(float(f_pred), 4),
                     "actual_points": round(float(y_true), 4),
                     "predicted_points": round(float(y_pred), 4),
                     "prediction_error": round(float(y_pred - y_true), 4),
@@ -394,6 +415,26 @@ def main(argv: list[str] | None = None) -> int:
         },
         "selected_params": selected["params"],
         "blind_test": test_metrics,
+        "auxiliary_targets": {
+            "minutes": {
+                "validation_leaderboard": minutes_result["validation_leaderboard"],
+                "selected_model": {
+                    **minutes_result["identity"],
+                    "candidate_id": minutes_result["selected"]["candidate_id"],
+                },
+                "selected_params": minutes_result["selected"]["params"],
+                "blind_test": minutes_result["blind_test"],
+            },
+            "fga": {
+                "validation_leaderboard": fga_result["validation_leaderboard"],
+                "selected_model": {
+                    **fga_result["identity"],
+                    "candidate_id": fga_result["selected"]["candidate_id"],
+                },
+                "selected_params": fga_result["selected"]["params"],
+                "blind_test": fga_result["blind_test"],
+            },
+        },
         "l10_points_baseline": baseline_metrics,
         "mae_improvement_vs_l10": float(baseline_metrics["mae"] - test_metrics["mae"]),
         "permutation_importance": ranked_importance,
@@ -403,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
             "Only the locked E2024 validation winner is scored on the E2025 blind test.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
+            "Minutes and FGA are independently forecast as auxiliary role and volume targets.",
+            "Role-volatility features separate recurring variance from one-game contextual shocks.",
             "A temporal leakage gate requires every feature cutoff to precede tipoff.",
             "Adding E2025 must leave every E2023/E2024 model feature byte-for-byte equal.",
             "Bookmaker lines are excluded; betting EDGE is evaluated later by "
@@ -418,10 +461,16 @@ def main(argv: list[str] | None = None) -> int:
         pickle.dump(
             {
                 "model": final_model,
+                "minutes_model": minutes_result["model"],
+                "fga_model": fga_result["model"],
                 "model_family": selected["family"],
                 "model_identity": selected_identity,
                 "features": feature_names,
                 "selected_params": selected["params"],
+                "minutes_selected_model": minutes_result["identity"],
+                "minutes_selected_params": minutes_result["selected"]["params"],
+                "fga_selected_model": fga_result["identity"],
+                "fga_selected_params": fga_result["selected"]["params"],
                 "minutes_basis": args.minutes_basis,
                 "trained_seasons": [args.train_season, args.validation_season],
                 "blind_test_season": args.test_season,
@@ -449,11 +498,23 @@ def main(argv: list[str] | None = None) -> int:
         metadata,
         y[test_mask],
         test_prediction,
+        minutes_y[test_mask],
+        minutes_result["test_prediction"],
+        fga_y[test_mask],
+        fga_result["test_prediction"],
     )
 
     print(json.dumps(report["rows"], sort_keys=True))
     print(json.dumps(report["validation_leaderboard"], sort_keys=True))
     print(json.dumps(report["blind_test"], sort_keys=True))
+    print(
+        "minutes_blind_test="
+        + json.dumps(report["auxiliary_targets"]["minutes"]["blind_test"], sort_keys=True)
+    )
+    print(
+        "fga_blind_test="
+        + json.dumps(report["auxiliary_targets"]["fga"]["blind_test"], sort_keys=True)
+    )
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
     print(f"features={len(feature_names)}")
