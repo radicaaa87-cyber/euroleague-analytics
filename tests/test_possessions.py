@@ -30,8 +30,12 @@ ALL_E2024_EVENT_TYPES = {
     "CM",
     "CMD",
     "CMT",
+    "CMT1",
     "CMTI",
     "CMU",
+    "CMU_D",
+    "CMU_DI",
+    "CMU_FL",
     "D",
     "EG",
     "EP",
@@ -87,12 +91,12 @@ def _event(
 OLDER_SEASON_EVENT_TYPES = {"TPOFF", "F", "BF"}
 
 
-def test_vocabulary_explicitly_classifies_all_31_e2024_event_types() -> None:
+def test_vocabulary_explicitly_classifies_all_observed_event_types() -> None:
     """Break caught: a newly observed type is silently ignored by the counter."""
     assert set(EVENT_ROLES) == ALL_E2024_EVENT_TYPES | OLDER_SEASON_EVENT_TYPES
     assert sum(role is EventRole.ENDING for role in EVENT_ROLES.values()) == 5
     assert sum(role is EventRole.CONTINUING for role in EVENT_ROLES.values()) == 4
-    assert sum(role is EventRole.NO_BALL for role in EVENT_ROLES.values()) == 25
+    assert sum(role is EventRole.NO_BALL for role in EVENT_ROLES.values()) == 29
 
 
 def test_older_season_marker_and_fight_rows_do_not_change_possessions() -> None:
