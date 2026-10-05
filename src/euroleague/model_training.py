@@ -48,11 +48,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             1::integer as offensive_possessions,
             0::integer as defensive_possessions,
             p.points_scored as points_for,
-            0::integer as points_against,
-            case
-                when p.duration_seconds between 0 and 8 then 1
-                else 0
-            end as transition_offensive_possessions
+            0::integer as points_against
         from v_possession p
         join requested_seasons rs using (season_code)
         join v_lineup_player lp
@@ -68,8 +64,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             0::integer as offensive_possessions,
             1::integer as defensive_possessions,
             0::integer as points_for,
-            p.points_scored as points_against,
-            0::integer as transition_offensive_possessions
+            p.points_scored as points_against
         from v_possession p
         join requested_seasons rs using (season_code)
         join v_lineup_player lp
@@ -84,9 +79,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             sum(offensive_possessions) as pbp_offensive_possessions,
             sum(defensive_possessions) as pbp_defensive_possessions,
             sum(points_for) as pbp_points_for,
-            sum(points_against) as pbp_points_against,
-            sum(transition_offensive_possessions)
-                as pbp_transition_offensive_possessions
+            sum(points_against) as pbp_points_against
         from possession_player_rows
         group by 1, 2, 3
     ),
@@ -197,8 +190,6 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 as pbp_defensive_possessions,
             coalesce(pg.pbp_points_for, 0) as pbp_points_for,
             coalesce(pg.pbp_points_against, 0) as pbp_points_against,
-            coalesce(pg.pbp_transition_offensive_possessions, 0)
-                as pbp_transition_offensive_possessions,
 
             coalesce(sg.pbp_stint_count, 0) as pbp_stint_count,
             sg.pbp_avg_stint_seconds,
@@ -288,11 +279,6 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 / nullif(sum(pbp_defensive_possessions) over w10, 0),
                 3
             ) as pre_l10_pbp_on_def_rating,
-            round(
-                (sum(pbp_transition_offensive_possessions) over w10)::numeric
-                / nullif(sum(pbp_offensive_possessions) over w10, 0),
-                4
-            ) as pre_l10_pbp_transition_offense_share,
 
             round(avg(pbp_stint_count::numeric) over w5, 3)
                 as pre_l5_pbp_stint_count,
@@ -390,7 +376,6 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l10_pbp_defensive_possessions,
         pf.pre_l10_pbp_on_off_rating,
         pf.pre_l10_pbp_on_def_rating,
-        pf.pre_l10_pbp_transition_offense_share,
         pf.pre_l5_pbp_stint_count,
         pf.pre_l5_pbp_distinct_lineups,
         pf.pre_l5_pbp_avg_stint_seconds,
