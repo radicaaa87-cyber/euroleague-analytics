@@ -46,7 +46,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-season", default=DEFAULT_TRAIN_SEASON)
     parser.add_argument("--validation-season", default=DEFAULT_VALIDATION_SEASON)
     parser.add_argument("--test-season", default=DEFAULT_TEST_SEASON)
-    parser.add_argument("--minutes-basis", default="official", choices=("official", "corrected", "raw"))
+    parser.add_argument(
+        "--minutes-basis",
+        default="official",
+        choices=("official", "corrected", "raw"),
+    )
     parser.add_argument("--min-history-games", type=int, default=3)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
@@ -316,7 +320,8 @@ def main(argv: list[str] | None = None) -> int:
             "Model selection uses E2024 validation only; E2025 is not used for tuning.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
-            "Bookmaker lines are excluded; betting EDGE is evaluated later by joining locked predictions.",
+            "Bookmaker lines are excluded; betting EDGE is evaluated later by "
+            "joining locked predictions.",
         ],
     }
 
