@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
+from euroleague import leakage
 from euroleague.mcp.model_features import get_player_model_context
 from euroleague.model_training import model_feature_columns, training_dataset_sql
 
@@ -161,3 +164,144 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_l10_pbp_on_off_rating",
         "pre_opponent_l5_def_rating",
     ]
+
+
+
+LEAKAGE_COLUMNS = [
+    "season_code",
+    "gamecode",
+    "game_tipoff_utc",
+    "feature_cutoff_time",
+    "player_id",
+    "is_home",
+    "pre_l10_points",
+    "pre_opponent_l5_def_rating",
+    "target_points",
+]
+
+
+def _leakage_row(
+    season: str,
+    gamecode: int,
+    player: str,
+    tipoff: dt.datetime,
+    cutoff: dt.datetime,
+    pre_points: float,
+    opponent_def: float,
+    target: float,
+) -> tuple:
+    return (
+        season,
+        gamecode,
+        tipoff,
+        cutoff,
+        player,
+        True,
+        pre_points,
+        opponent_def,
+        target,
+    )
+
+
+def test_cutoff_gate_accepts_strictly_historical_sources() -> None:
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
+    rows = [
+        _leakage_row(
+            "E2024",
+            100,
+            "P1",
+            tipoff,
+            tipoff - dt.timedelta(days=3),
+            12.0,
+            111.5,
+            15.0,
+        )
+    ]
+
+    result = leakage.assert_feature_cutoffs_before_tipoff(LEAKAGE_COLUMNS, rows)
+
+    assert result == {"rows_checked": 1, "violations": 0}
+
+
+def test_cutoff_gate_rejects_source_at_or_after_tipoff() -> None:
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
+    rows = [_leakage_row("E2024", 100, "P1", tipoff, tipoff, 12.0, 111.5, 15.0)]
+
+    with pytest.raises(leakage.LeakageAuditError, match="not strictly before tipoff"):
+        leakage.assert_feature_cutoffs_before_tipoff(LEAKAGE_COLUMNS, rows)
+
+
+def test_prefix_invariance_accepts_future_rows_without_old_feature_changes() -> None:
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
+    baseline = [
+        _leakage_row(
+            "E2024",
+            100,
+            "P1",
+            tipoff,
+            tipoff - dt.timedelta(days=3),
+            12.0,
+            111.5,
+            15.0,
+        )
+    ]
+    expanded = [
+        *baseline,
+        _leakage_row(
+            "E2025",
+            1,
+            "P1",
+            tipoff + dt.timedelta(days=250),
+            tipoff + dt.timedelta(days=240),
+            14.0,
+            108.0,
+            17.0,
+        ),
+    ]
+
+    result = leakage.assert_prefix_invariance(
+        LEAKAGE_COLUMNS,
+        baseline,
+        LEAKAGE_COLUMNS,
+        expanded,
+    )
+
+    assert result["rows_checked"] == 1
+    assert result["features_checked"] == 3
+    assert result["mutations"] == 0
+
+
+def test_prefix_invariance_rejects_future_mutation_of_old_feature() -> None:
+    tipoff = dt.datetime(2025, 1, 10, 19, 30, tzinfo=dt.UTC)
+    baseline = [
+        _leakage_row(
+            "E2024",
+            100,
+            "P1",
+            tipoff,
+            tipoff - dt.timedelta(days=3),
+            12.0,
+            111.5,
+            15.0,
+        )
+    ]
+    expanded = [
+        _leakage_row(
+            "E2024",
+            100,
+            "P1",
+            tipoff,
+            tipoff - dt.timedelta(days=3),
+            13.0,
+            111.5,
+            15.0,
+        )
+    ]
+
+    with pytest.raises(leakage.LeakageAuditError, match="changed after adding future data"):
+        leakage.assert_prefix_invariance(
+            LEAKAGE_COLUMNS,
+            baseline,
+            LEAKAGE_COLUMNS,
+            expanded,
+        )
