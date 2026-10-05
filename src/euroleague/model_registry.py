@@ -137,8 +137,7 @@ class ModelArtifactStorage:
             self.download_verified(path, expected_sha256)
         except ModelArtifactError:
             raise ModelArtifactError(
-                f"Could not upload immutable model artifact {path!r}: "
-                f"HTTP {response.status_code}."
+                f"Could not upload immutable model artifact {path!r}: HTTP {response.status_code}."
             ) from None
 
 
