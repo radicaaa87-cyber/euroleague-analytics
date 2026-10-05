@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from euroleague.mcp import queries
+from euroleague.mcp import model_features, queries
 from euroleague.mcp.envelope import RESPONSE_OUTPUT_SCHEMA
 from euroleague.mcp.protocol import Tool
 
@@ -22,6 +22,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "el_get_boxscore",
     "el_get_team_stats",
     "el_get_player_stats",
+    "el_get_player_model_context",
     "el_get_lineup_stats",
     "el_get_player_on_off",
     "el_get_possessions",
@@ -365,6 +366,62 @@ def build_registry(
                 required=["season"],
             ),
             query=queries.get_player_stats,
+        ),
+        tool(
+            name="el_get_player_model_context",
+            title="Compact pre-game player model context",
+            description=(
+                "Start a player-points analysis here instead of chaining many box-score and "
+                "play-by-play calls. Returns one compact server-side bundle with L3/L5/L10 "
+                "minutes, points, FGA, 3PA and FTA, starter rates, per-minute rates, recent "
+                "game rows, role trends, and optional opponent L5 offensive/defensive rating "
+                "and possessions. Supply as_of_date for backtests: every rolling number then "
+                "uses only games strictly before that date, preventing look-ahead leakage. "
+                "Raw play-by-play remains available through el_get_play_by_play for drill-down "
+                "only. The bookmaker line is deliberately not part of this projection context."
+            ),
+            input_schema=_schema(
+                {
+                    "season": _SEASON,
+                    "player": {
+                        "type": "string",
+                        "description": "Player id such as P009862, or a player name.",
+                    },
+                    "opponent": {
+                        "type": "string",
+                        "description": (
+                            "Optional upcoming opponent by team code or club name. When given, "
+                            "the same response adds the opponent's previous-five-game profile."
+                        ),
+                    },
+                    "as_of_date": {
+                        "type": "string",
+                        "description": (
+                            "Optional ISO date YYYY-MM-DD. Only games strictly before this date "
+                            "may enter rolling features; use it for every historical backtest."
+                        ),
+                    },
+                    "lookback": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": (
+                            "Number of recent games included in the compact recent_games array. "
+                            "Must be between 10 and 20; L3/L5/L10 features stay fixed."
+                        ),
+                    },
+                    "minutes_basis": {
+                        "type": "string",
+                        "enum": ["corrected", "raw", "official"],
+                        "default": "official",
+                        "description": (
+                            "Minutes source used by every minutes-derived feature. Default "
+                            "official for stable historical player-points modelling."
+                        ),
+                    },
+                },
+                required=["season", "player"],
+            ),
+            query=model_features.get_player_model_context,
         ),
         tool(
             name="el_get_lineup_stats",
