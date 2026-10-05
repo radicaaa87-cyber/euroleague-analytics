@@ -56,7 +56,7 @@ jobs:
       - name: Lint
         run: |
           .venv\Scripts\ruff.exe check --fix scripts\train_player_points_ml.py
-          git diff -- scripts\train_player_points_ml.py
+          Get-Content scripts\train_player_points_ml.py -TotalCount 50
           .venv\Scripts\ruff.exe check .
 
       - name: Check formatting
