@@ -179,6 +179,324 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         join player_lineup_summary l
           using (season_code, gamecode, player_id)
     ),
+    lineup_matchup_candidate as (
+        select
+            ls.season_code,
+            ls.gamecode,
+            ls.stint_index,
+            home_player.player_id,
+            home_roster.position_name as player_position_name,
+            home_roster.height_cm as player_height_cm,
+            home_roster.weight_kg as player_weight_kg,
+            away_player.player_id as opponent_player_id,
+            away_roster.position_name as opponent_position_name,
+            away_roster.height_cm as opponent_height_cm,
+            away_roster.weight_kg as opponent_weight_kg,
+            greatest(ls.duration_seconds_raw, 0)::numeric as overlap_seconds
+        from lineup_stint ls
+        join requested_seasons rs using (season_code)
+        join v_game g
+          on g.season_code = ls.season_code
+         and g.gamecode = ls.gamecode
+        join lineup home_lineup
+          on home_lineup.lineup_id = ls.home_lineup_id
+        join lineup away_lineup
+          on away_lineup.lineup_id = ls.away_lineup_id
+        join v_lineup_player home_player
+          on home_player.lineup_id = ls.home_lineup_id
+        join v_lineup_player away_player
+          on away_player.lineup_id = ls.away_lineup_id
+        left join v_roster home_roster
+          on home_roster.season_code = ls.season_code
+         and home_roster.team_code = home_lineup.team_code
+         and home_roster.player_id = home_player.player_id
+        left join v_roster away_roster
+          on away_roster.season_code = ls.season_code
+         and away_roster.team_code = away_lineup.team_code
+         and away_roster.player_id = away_player.player_id
+        where not g.excluded_by_default
+
+        union all
+
+        select
+            ls.season_code,
+            ls.gamecode,
+            ls.stint_index,
+            away_player.player_id,
+            away_roster.position_name as player_position_name,
+            away_roster.height_cm as player_height_cm,
+            away_roster.weight_kg as player_weight_kg,
+            home_player.player_id as opponent_player_id,
+            home_roster.position_name as opponent_position_name,
+            home_roster.height_cm as opponent_height_cm,
+            home_roster.weight_kg as opponent_weight_kg,
+            greatest(ls.duration_seconds_raw, 0)::numeric as overlap_seconds
+        from lineup_stint ls
+        join requested_seasons rs using (season_code)
+        join v_game g
+          on g.season_code = ls.season_code
+         and g.gamecode = ls.gamecode
+        join lineup home_lineup
+          on home_lineup.lineup_id = ls.home_lineup_id
+        join lineup away_lineup
+          on away_lineup.lineup_id = ls.away_lineup_id
+        join v_lineup_player home_player
+          on home_player.lineup_id = ls.home_lineup_id
+        join v_lineup_player away_player
+          on away_player.lineup_id = ls.away_lineup_id
+        left join v_roster home_roster
+          on home_roster.season_code = ls.season_code
+         and home_roster.team_code = home_lineup.team_code
+         and home_roster.player_id = home_player.player_id
+        left join v_roster away_roster
+          on away_roster.season_code = ls.season_code
+         and away_roster.team_code = away_lineup.team_code
+         and away_roster.player_id = away_player.player_id
+        where not g.excluded_by_default
+    ),
+    lineup_matchup_weighted as (
+        select
+            *,
+            overlap_seconds
+            * case
+                when player_position_name is null
+                  or opponent_position_name is null
+                    then 0.50
+                when player_position_name = opponent_position_name
+                    then 1.00
+                else 0.30
+              end
+            * case
+                when player_height_cm is null
+                  or opponent_height_cm is null
+                    then 0.70
+                else greatest(
+                    0.25,
+                    1.00 - abs(player_height_cm - opponent_height_cm)::numeric / 30.0
+                )
+              end as matchup_weight
+        from lineup_matchup_candidate
+        where overlap_seconds > 0
+    ),
+    player_game_inferred_matchup as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            round(
+                sum(opponent_height_cm::numeric * matchup_weight)
+                / nullif(
+                    sum(matchup_weight) filter (where opponent_height_cm is not null),
+                    0
+                ),
+                3
+            ) as inferred_defender_height_cm,
+            round(
+                sum(opponent_weight_kg::numeric * matchup_weight)
+                / nullif(
+                    sum(matchup_weight) filter (where opponent_weight_kg is not null),
+                    0
+                ),
+                3
+            ) as inferred_defender_weight_kg,
+            round(
+                sum(matchup_weight) filter (
+                    where opponent_position_name = player_position_name
+                ) / nullif(sum(matchup_weight), 0),
+                4
+            ) as inferred_same_position_share,
+            round(
+                sum(matchup_weight) filter (
+                    where opponent_position_name = 'Guard'
+                ) / nullif(sum(matchup_weight), 0),
+                4
+            ) as inferred_guard_share,
+            round(
+                sum(matchup_weight) filter (
+                    where opponent_position_name = 'Forward'
+                ) / nullif(sum(matchup_weight), 0),
+                4
+            ) as inferred_forward_share,
+            round(
+                sum(matchup_weight) filter (
+                    where opponent_position_name = 'Center'
+                ) / nullif(sum(matchup_weight), 0),
+                4
+            ) as inferred_center_share
+        from lineup_matchup_weighted
+        group by 1, 2, 3
+    ),
+    team_rotation_player_game as (
+        select
+            psr.season_code,
+            psr.gamecode,
+            g.utc_date as game_tipoff_utc,
+            l.team_code,
+            psr.player_id,
+            sum(psr.duration_seconds)::numeric as player_seconds,
+            r.position_name,
+            r.height_cm,
+            r.weight_kg
+        from player_stint_rows psr
+        join v_game g
+          on g.season_code = psr.season_code
+         and g.gamecode = psr.gamecode
+        join lineup l
+          on l.lineup_id = psr.lineup_id
+        left join v_roster r
+          on r.season_code = psr.season_code
+         and r.team_code = l.team_code
+         and r.player_id = psr.player_id
+        group by
+            psr.season_code,
+            psr.gamecode,
+            g.utc_date,
+            l.team_code,
+            psr.player_id,
+            r.position_name,
+            r.height_cm,
+            r.weight_kg
+    ),
+    team_game_rotation_profile as (
+        select
+            season_code,
+            gamecode,
+            game_tipoff_utc,
+            team_code,
+            round(
+                sum(height_cm::numeric * player_seconds)
+                / nullif(
+                    sum(player_seconds) filter (where height_cm is not null),
+                    0
+                ),
+                3
+            ) as rotation_avg_height_cm,
+            round(
+                sum(weight_kg::numeric * player_seconds)
+                / nullif(
+                    sum(player_seconds) filter (where weight_kg is not null),
+                    0
+                ),
+                3
+            ) as rotation_avg_weight_kg,
+            round(
+                sum(player_seconds) filter (where position_name = 'Guard')
+                / nullif(sum(player_seconds), 0),
+                4
+            ) as rotation_guard_share,
+            round(
+                sum(player_seconds) filter (where position_name = 'Forward')
+                / nullif(sum(player_seconds), 0),
+                4
+            ) as rotation_forward_share,
+            round(
+                sum(player_seconds) filter (where position_name = 'Center')
+                / nullif(sum(player_seconds), 0),
+                4
+            ) as rotation_center_share
+        from team_rotation_player_game
+        group by 1, 2, 3, 4
+    ),
+    team_game_position_profile as (
+        select
+            season_code,
+            gamecode,
+            game_tipoff_utc,
+            team_code,
+            position_name,
+            round(
+                sum(height_cm::numeric * player_seconds)
+                / nullif(
+                    sum(player_seconds) filter (where height_cm is not null),
+                    0
+                ),
+                3
+            ) as position_avg_height_cm,
+            round(
+                sum(weight_kg::numeric * player_seconds)
+                / nullif(
+                    sum(player_seconds) filter (where weight_kg is not null),
+                    0
+                ),
+                3
+            ) as position_avg_weight_kg,
+            round(
+                sum(player_seconds)
+                / nullif(
+                    sum(sum(player_seconds)) over (
+                        partition by season_code, gamecode, team_code
+                    ),
+                    0
+                ),
+                4
+            ) as position_rotation_share
+        from team_rotation_player_game
+        where position_name is not null
+        group by 1, 2, 3, 4, 5
+    ),
+    model_positions(position_name) as (
+        values ('Guard'), ('Forward'), ('Center')
+    ),
+    team_game_position_grid as (
+        select
+            tg.season_code,
+            tg.gamecode,
+            tg.utc_date as game_tipoff_utc,
+            tg.team_code,
+            mp.position_name,
+            gp.position_avg_height_cm,
+            gp.position_avg_weight_kg,
+            gp.position_rotation_share
+        from v_team_game tg
+        join requested_seasons rs using (season_code)
+        cross join model_positions mp
+        left join team_game_position_profile gp
+          on gp.season_code = tg.season_code
+         and gp.gamecode = tg.gamecode
+         and gp.team_code = tg.team_code
+         and gp.position_name = mp.position_name
+        where not tg.excluded_by_default
+    ),
+    team_position_features as (
+        select
+            *,
+            lag(game_tipoff_utc) over position_w5
+                as position_feature_cutoff_time,
+            round(avg(position_avg_height_cm) over position_w5, 3)
+                as pre_l5_position_avg_height_cm,
+            round(avg(position_avg_weight_kg) over position_w5, 3)
+                as pre_l5_position_avg_weight_kg,
+            round(avg(position_rotation_share) over position_w5, 4)
+                as pre_l5_position_rotation_share
+        from team_game_position_grid
+        window position_w5 as (
+            partition by team_code, position_name
+            order by game_tipoff_utc, gamecode
+            rows between 5 preceding and 1 preceding
+        )
+    ),
+    team_rotation_features as (
+        select
+            *,
+            lag(game_tipoff_utc) over rotation_w5
+                as rotation_feature_cutoff_time,
+            round(avg(rotation_avg_height_cm) over rotation_w5, 3)
+                as pre_l5_rotation_avg_height_cm,
+            round(avg(rotation_avg_weight_kg) over rotation_w5, 3)
+                as pre_l5_rotation_avg_weight_kg,
+            round(avg(rotation_guard_share) over rotation_w5, 4)
+                as pre_l5_rotation_guard_share,
+            round(avg(rotation_forward_share) over rotation_w5, 4)
+                as pre_l5_rotation_forward_share,
+            round(avg(rotation_center_share) over rotation_w5, 4)
+                as pre_l5_rotation_center_share
+        from team_game_rotation_profile
+        window rotation_w5 as (
+            partition by team_code
+            order by game_tipoff_utc, gamecode
+            rows between 5 preceding and 1 preceding
+        )
+    ),
     player_base as (
         select
             p.season_code,
@@ -191,6 +509,15 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             p.opponent_team_code,
             tg.is_home,
             p.is_starter,
+            pr.position_name as player_position_name,
+            pr.height_cm as player_height_cm,
+            pr.weight_kg as player_weight_kg,
+            im.inferred_defender_height_cm as matchup_defender_height_cm,
+            im.inferred_defender_weight_kg as matchup_defender_weight_kg,
+            im.inferred_same_position_share as matchup_same_position_share,
+            im.inferred_guard_share as matchup_guard_share,
+            im.inferred_forward_share as matchup_forward_share,
+            im.inferred_center_share as matchup_center_share,
             p.points,
             p.field_goals_attempted,
             p.three_pointers_attempted,
@@ -227,6 +554,14 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on tg.season_code = p.season_code
          and tg.gamecode = p.gamecode
          and tg.team_code = p.team_code
+        left join v_roster pr
+          on pr.season_code = p.season_code
+         and pr.team_code = p.team_code
+         and pr.player_id = p.player_id
+        left join player_game_inferred_matchup im
+          on im.season_code = p.season_code
+         and im.gamecode = p.gamecode
+         and im.player_id = p.player_id
         left join pbp_possession_game pg
           on pg.season_code = p.season_code
          and pg.gamecode = p.gamecode
@@ -394,6 +729,95 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             *,
             count(*) over w10 as pre_history_games,
             count(*) over wseason as pre_current_season_games,
+
+            max(player_height_cm) over wprofile as pre_player_height_cm,
+            max(player_weight_kg) over wprofile as pre_player_weight_kg,
+            max(case when player_position_name = 'Guard' then 1 else 0 end)
+                over wprofile as pre_player_is_guard,
+            max(case when player_position_name = 'Forward' then 1 else 0 end)
+                over wprofile as pre_player_is_forward,
+            max(case when player_position_name = 'Center' then 1 else 0 end)
+                over wprofile as pre_player_is_center,
+
+            count(matchup_defender_height_cm) over w20
+                as pre_matchup_profile_games,
+            round(
+                (regr_slope(
+                    60.0 * points::double precision
+                        / nullif(seconds_played, 0),
+                    matchup_defender_height_cm::double precision
+                ) over w20)::numeric,
+                5
+            ) as pre_matchup_ppm_vs_defender_height_slope,
+            round(
+                (regr_slope(
+                    game_ts_proxy::double precision,
+                    matchup_defender_height_cm::double precision
+                ) over w20)::numeric,
+                5
+            ) as pre_matchup_ts_vs_defender_height_slope,
+            round(
+                avg(
+                    60.0 * points::numeric / nullif(seconds_played, 0)
+                ) filter (
+                    where matchup_defender_height_cm >= player_height_cm + 4
+                ) over w20,
+                4
+            ) as pre_ppm_vs_taller_defender_profile,
+            round(
+                avg(
+                    60.0 * points::numeric / nullif(seconds_played, 0)
+                ) filter (
+                    where matchup_defender_height_cm
+                        between player_height_cm - 3 and player_height_cm + 3
+                ) over w20,
+                4
+            ) as pre_ppm_vs_similar_defender_profile,
+            round(
+                avg(
+                    60.0 * points::numeric / nullif(seconds_played, 0)
+                ) filter (
+                    where matchup_defender_height_cm <= player_height_cm - 4
+                ) over w20,
+                4
+            ) as pre_ppm_vs_shorter_defender_profile,
+            round(
+                avg(game_ts_proxy) filter (
+                    where matchup_defender_height_cm >= player_height_cm + 4
+                ) over w20,
+                4
+            ) as pre_ts_vs_taller_defender_profile,
+            round(
+                avg(game_ts_proxy) filter (
+                    where matchup_defender_height_cm
+                        between player_height_cm - 3 and player_height_cm + 3
+                ) over w20,
+                4
+            ) as pre_ts_vs_similar_defender_profile,
+            round(
+                avg(game_ts_proxy) filter (
+                    where matchup_defender_height_cm <= player_height_cm - 4
+                ) over w20,
+                4
+            ) as pre_ts_vs_shorter_defender_profile,
+            round(avg(matchup_same_position_share) over w20, 4)
+                as pre_avg_same_position_matchup_share,
+            round(
+                (regr_slope(
+                    60.0 * points::double precision
+                        / nullif(seconds_played, 0),
+                    matchup_guard_share::double precision
+                ) over w20)::numeric,
+                5
+            ) as pre_matchup_ppm_vs_guard_share_slope,
+            round(
+                (regr_slope(
+                    60.0 * points::double precision
+                        / nullif(seconds_played, 0),
+                    matchup_center_share::double precision
+                ) over w20)::numeric,
+                5
+            ) as pre_matchup_ppm_vs_center_share_slope,
 
             coalesce(prev_hand_state, 0) as pre_last_hand_state,
             round(
@@ -573,6 +997,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 partition by player_id
                 order by game_tipoff_utc, gamecode
             ),
+            wprofile as (
+                partition by season_code, player_id
+                order by game_tipoff_utc, gamecode
+                rows between unbounded preceding and current row
+            ),
             whistory as (
                 partition by player_id
                 order by game_tipoff_utc, gamecode
@@ -597,6 +1026,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 partition by player_id
                 order by game_tipoff_utc, gamecode
                 rows between 10 preceding and 1 preceding
+            ),
+            w20 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 20 preceding and 1 preceding
             ),
             w7d as (
                 partition by player_id
@@ -645,7 +1079,9 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         greatest(
             pf.player_feature_cutoff_time,
             tt.team_feature_cutoff_time,
-            ot.team_feature_cutoff_time
+            ot.team_feature_cutoff_time,
+            ort.rotation_feature_cutoff_time,
+            opt.position_feature_cutoff_time
         ) as feature_cutoff_time,
         pf.game_date,
         pf.player_id,
@@ -656,6 +1092,23 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
 
         pf.pre_history_games,
         pf.pre_current_season_games,
+        pf.pre_player_height_cm,
+        pf.pre_player_weight_kg,
+        pf.pre_player_is_guard,
+        pf.pre_player_is_forward,
+        pf.pre_player_is_center,
+        pf.pre_matchup_profile_games,
+        pf.pre_matchup_ppm_vs_defender_height_slope,
+        pf.pre_matchup_ts_vs_defender_height_slope,
+        pf.pre_ppm_vs_taller_defender_profile,
+        pf.pre_ppm_vs_similar_defender_profile,
+        pf.pre_ppm_vs_shorter_defender_profile,
+        pf.pre_ts_vs_taller_defender_profile,
+        pf.pre_ts_vs_similar_defender_profile,
+        pf.pre_ts_vs_shorter_defender_profile,
+        pf.pre_avg_same_position_matchup_share,
+        pf.pre_matchup_ppm_vs_guard_share_slope,
+        pf.pre_matchup_ppm_vs_center_share_slope,
         pf.pre_last_hand_state,
         pf.pre_last_ts_delta_vs_prior_l10,
         pf.pre_hot_streak_games,
@@ -714,6 +1167,30 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         tt.pre_l5_off_rating as pre_team_l5_off_rating,
         tt.pre_l5_def_rating as pre_team_l5_def_rating,
         tt.pre_l5_possessions as pre_team_l5_possessions,
+        ort.pre_l5_rotation_avg_height_cm
+            as pre_opponent_rotation_avg_height_cm,
+        ort.pre_l5_rotation_avg_weight_kg
+            as pre_opponent_rotation_avg_weight_kg,
+        ort.pre_l5_rotation_guard_share
+            as pre_opponent_rotation_guard_share,
+        ort.pre_l5_rotation_forward_share
+            as pre_opponent_rotation_forward_share,
+        ort.pre_l5_rotation_center_share
+            as pre_opponent_rotation_center_share,
+        opt.pre_l5_position_avg_height_cm
+            as pre_opponent_same_position_avg_height_cm,
+        opt.pre_l5_position_avg_weight_kg
+            as pre_opponent_same_position_avg_weight_kg,
+        opt.pre_l5_position_rotation_share
+            as pre_opponent_same_position_rotation_share,
+        round(
+            opt.pre_l5_position_avg_height_cm - pf.pre_player_height_cm,
+            3
+        ) as pre_matchup_height_diff_cm,
+        round(
+            opt.pre_l5_position_avg_weight_kg - pf.pre_player_weight_kg,
+            3
+        ) as pre_matchup_weight_diff_kg,
         ot.pre_l5_off_rating as pre_opponent_l5_off_rating,
         ot.pre_l5_def_rating as pre_opponent_l5_def_rating,
         ot.pre_l5_possessions as pre_opponent_l5_possessions,
@@ -742,6 +1219,15 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
       on ot.season_code = pf.season_code
      and ot.gamecode = pf.gamecode
      and ot.team_code = pf.opponent_team_code
+    left join team_rotation_features ort
+      on ort.season_code = pf.season_code
+     and ort.gamecode = pf.gamecode
+     and ort.team_code = pf.opponent_team_code
+    left join team_position_features opt
+      on opt.season_code = pf.season_code
+     and opt.gamecode = pf.gamecode
+     and opt.team_code = pf.opponent_team_code
+     and opt.position_name = pf.player_position_name
     where pf.pre_history_games >= %s
     order by pf.game_date, pf.gamecode, pf.player_id
     """

@@ -142,6 +142,17 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_hot_break_eff_reversion_rate" in sql
     assert "pre_cold_break_role_expansion_rate" in sql
     assert "pre_cold_break_eff_recovery_rate" in sql
+    assert "lineup_matchup_candidate" in sql
+    assert "player_game_inferred_matchup" in sql
+    assert "matchup_weight" in sql
+    assert "pre_player_height_cm" in sql
+    assert "pre_matchup_profile_games" in sql
+    assert "pre_matchup_ppm_vs_defender_height_slope" in sql
+    assert "pre_ppm_vs_taller_defender_profile" in sql
+    assert "pre_ppm_vs_shorter_defender_profile" in sql
+    assert "pre_opponent_same_position_avg_height_cm" in sql
+    assert "pre_matchup_height_diff_cm" in sql
+    assert "rows between 20 preceding and 1 preceding" in sql
     assert "rows between unbounded preceding and 1 preceding" in sql
     assert "range between interval '7 days' preceding" in sql
     assert "range between interval '14 days' preceding" in sql
@@ -181,6 +192,11 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_hot_streak_games",
         "pre_avg_hot_episode_games",
         "pre_hot_break_eff_reversion_rate",
+        "pre_player_height_cm",
+        "pre_matchup_profile_games",
+        "pre_matchup_ppm_vs_defender_height_slope",
+        "pre_opponent_same_position_avg_height_cm",
+        "pre_matchup_height_diff_cm",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -198,6 +214,11 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_hot_streak_games",
         "pre_avg_hot_episode_games",
         "pre_hot_break_eff_reversion_rate",
+        "pre_player_height_cm",
+        "pre_matchup_profile_games",
+        "pre_matchup_ppm_vs_defender_height_slope",
+        "pre_opponent_same_position_avg_height_cm",
+        "pre_matchup_height_diff_cm",
     ]
 
 
