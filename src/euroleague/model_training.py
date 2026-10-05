@@ -22,6 +22,22 @@ _MINUTES_COLUMNS = {
     "raw": "seconds_raw",
 }
 
+_SAFE_STATIC_FEATURES = {"is_home"}
+
+
+def model_feature_columns(columns: Iterable[str]) -> list[str]:
+    """Return only columns that are legal model inputs.
+
+    Historical signals are explicitly prefixed pre_. The only static
+    non-rolling input currently allowed is is_home. Player/team ids,
+    bookmaker lines and every target_* field are deliberately excluded.
+    """
+    return [
+        column
+        for column in columns
+        if column.startswith("pre_") or column in _SAFE_STATIC_FEATURES
+    ]
+
 
 def training_dataset_sql(minutes_basis: str = "official") -> str:
     """Return the leakage-safe player-game feature query.
