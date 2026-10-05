@@ -33,7 +33,6 @@ from euroleague.config import DatabaseSettings
 from euroleague.mcp.db import connect
 from euroleague.model_training import model_feature_columns, training_dataset_sql
 
-
 DEFAULT_TRAIN_SEASON = "E2023"
 DEFAULT_VALIDATION_SEASON = "E2024"
 DEFAULT_TEST_SEASON = "E2025"
