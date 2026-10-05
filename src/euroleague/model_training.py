@@ -8,8 +8,9 @@ consume the MCP row budget or create hundreds of model actions.
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from euroleague.config import DatabaseSettings
 from euroleague.mcp.db import connect
