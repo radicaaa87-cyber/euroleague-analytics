@@ -19,8 +19,7 @@ COLLECTION_ID = 4
 
 def _load_rows() -> list[dict[str, object]]:
     encoded = "".join(
-        path.read_text(encoding="utf-8").strip()
-        for path in sorted(Path(".").glob(PART_GLOB))
+        path.read_text(encoding="utf-8").strip() for path in sorted(Path(".").glob(PART_GLOB))
     )
     if not encoded:
         raise RuntimeError("Manual Mozzart payload parts are missing.")
@@ -51,10 +50,7 @@ def main() -> int:
                 where bookmaker = 'mozzart'
                 """
             )
-            documents = {
-                row[1]: (int(row[0]), row[2])
-                for row in cursor.fetchall()
-            }
+            documents = {row[1]: (int(row[0]), row[2]) for row in cursor.fetchall()}
 
         for row in rows:
             document = documents.get(str(row["content_sha256"]))
