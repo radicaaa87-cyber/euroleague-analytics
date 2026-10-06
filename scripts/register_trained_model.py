@@ -57,9 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         "naive_points_baseline": report.get("naive_points_baseline"),
         "role_base_points": report.get("role_base_points"),
         "l10_points_baseline": report["l10_points_baseline"],
-        "mae_improvement_role_base_vs_naive": report.get(
-            "mae_improvement_role_base_vs_naive"
-        ),
+        "mae_improvement_role_base_vs_naive": report.get("mae_improvement_role_base_vs_naive"),
         "mae_improvement_vs_naive": report.get("mae_improvement_vs_naive"),
         "mae_improvement_vs_l10": report["mae_improvement_vs_l10"],
     }
