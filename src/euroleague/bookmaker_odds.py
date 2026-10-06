@@ -198,17 +198,29 @@ def _candidate_variants(display_name: str) -> set[str]:
         return set()
 
     variants = {normalized}
-    if len(tokens) >= 2:
+    name_orders: list[tuple[str, str]] = []
+
+    if "," in display_name:
+        surname_raw, given_raw = display_name.split(",", 1)
+        surname = normalize_name(surname_raw)
+        given = normalize_name(given_raw)
+        if given and surname:
+            name_orders.append((given, surname))
+            variants.add(f"{given} {surname}")
+    elif len(tokens) >= 2:
+        name_orders.append((tokens[0], " ".join(tokens[1:])))
         variants.add(" ".join([tokens[-1], *tokens[:-1]]))
         variants.add(" ".join(reversed(tokens)))
 
-        first = tokens[0]
-        surname = " ".join(tokens[1:])
+    for given, surname in name_orders:
+        given_tokens = given.split()
+        first = given_tokens[0] if given_tokens else ""
         compact_surname = surname.replace(" ", "")
         for width in range(1, min(3, len(first)) + 1):
             prefix = first[:width]
             variants.add(f"{prefix}.{surname}")
             variants.add(f"{prefix}.{compact_surname}")
+
     return {item.strip() for item in variants if item.strip()}
 
 
@@ -217,7 +229,7 @@ def _best_prefix_split(
     candidates: Iterable[AthleteCandidate],
 ) -> tuple[AthleteCandidate, int, str, float] | None:
     raw_tokens = participant_text.split()
-    if len(raw_tokens) < 2:
+    if not raw_tokens:
         return None
 
     exact_matches: list[tuple[AthleteCandidate, int, str, float]] = []
@@ -239,7 +251,14 @@ def _best_prefix_split(
 
     if exact_matches:
         exact_matches.sort(key=lambda item: (item[1], len(item[2])), reverse=True)
-        return exact_matches[0]
+        best_split, best_length = exact_matches[0][1], len(exact_matches[0][2])
+        strongest = [
+            item for item in exact_matches if item[1] == best_split and len(item[2]) == best_length
+        ]
+        athlete_ids = {item[0].athlete_id for item in strongest}
+        if len(athlete_ids) != 1:
+            return None
+        return strongest[0]
 
     if not fuzzy_matches:
         return None
@@ -344,6 +363,7 @@ def _parse_row(
         over_odds=over_odds,
         row_text=compact,
     )
+
 
 def parse_mozzart_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
     """Parse only the central EuroLeague player-points table from Mozzart PDFs.

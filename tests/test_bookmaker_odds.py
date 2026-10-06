@@ -185,3 +185,55 @@ POENI IGRAČA manje više
 
     assert len(millennium) == 1
     assert millennium[0].bookmaker == "millennium"
+
+
+def test_mozzart_abbreviation_resolves_surname_first_el_identity() -> None:
+    candidates = [
+        AthleteCandidate("el-punter", "PUNTER, KEVIN"),
+        AthleteCandidate("el-james", "JAMES, MIKE"),
+    ]
+
+    match = resolve_participant(
+        "K.PUNTER Bar",
+        candidates,
+        bookmaker="mozzart",
+    )
+
+    assert match.athlete_id == "el-punter"
+    assert match.player_name_raw == "K.PUNTER"
+    assert match.team_name_raw == "Bar"
+    assert match.confidence == 1.0
+
+
+def test_mozzart_multiword_surname_resolves_surname_first_el_identity() -> None:
+    candidates = [
+        AthleteCandidate("el-yago", "DOS SANTOS, YAGO"),
+        AthleteCandidate("el-mike", "JAMES, MIKE"),
+    ]
+
+    match = resolve_participant(
+        "Y.DOS SANTOS Crv",
+        candidates,
+        bookmaker="mozzart",
+    )
+
+    assert match.athlete_id == "el-yago"
+    assert match.player_name_raw == "Y.DOS SANTOS"
+    assert match.team_name_raw == "Crv"
+    assert match.confidence == 1.0
+
+
+def test_ambiguous_exact_bookmaker_abbreviation_is_not_auto_matched() -> None:
+    candidates = [
+        AthleteCandidate("a1", "JONES, CARLIK"),
+        AthleteCandidate("a2", "JONES, CAMERON"),
+    ]
+
+    match = resolve_participant(
+        "C.JONES Par",
+        candidates,
+        bookmaker="mozzart",
+    )
+
+    assert match.athlete_id is None
+    assert match.confidence is None

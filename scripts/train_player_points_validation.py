@@ -36,6 +36,25 @@ from train_player_points_ml import (
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
+from euroleague.model_signal_regimes import (
+    ablation_signal_contributions,
+    apply_efficiency_cycle_effects,
+    apply_pattern_effects,
+    build_signal_fingerprints,
+    _feature_column,
+    classify_efficiency_cycles,
+    cold_context_feature_columns,
+    cold_context_temporal_stability,
+    diagnostic_feature_columns,
+    filter_noisy_signal_contributions,
+    learn_efficiency_cycle_effects,
+    learn_pattern_effects,
+    signal_domain_columns,
+    summarize_efficiency_cycles,
+    summarize_pattern_stability,
+    summarize_repeating_patterns,
+    summarize_signal_tiers,
+)
 from euroleague.model_training import model_feature_columns
 from euroleague.model_validation import (
     placebo_target_audit,
@@ -59,6 +78,21 @@ MATCHUP_SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75)
 PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_STALL_WARNING_SECONDS = 300
 PROGRESS_HARD_TIMEOUT_SECONDS = 1200
+
+MODEL10_PATTERN_OOF_BLOCKS = 4
+MODEL10_PATTERN_MIN_OCCURRENCES = 20
+MODEL10_PATTERN_PRIOR_STRENGTH = 20.0
+
+COLD_CONTEXT_MODEL_FAMILY = "hist_gradient_boosting"
+COLD_CONTEXT_MODEL_PARAMS = {
+    "learning_rate": 0.05,
+    "max_iter": 250,
+    "max_leaf_nodes": 15,
+    "min_samples_leaf": 20,
+    "l2_regularization": 2.0,
+}
+COLD_CONTEXT_MIN_TRAIN_ROWS = 80
+COLD_CONTEXT_MIN_BLOCK_ROWS = 20
 
 _PROGRESS_LOCK = threading.Lock()
 _PROGRESS_PHASE = "startup"
@@ -102,8 +136,7 @@ def _start_progress_watchdog() -> threading.Event:
                 dump_key = (phase, bucket)
                 if dump_key != last_dump_key:
                     print(
-                        "TRAIN_STALL_WARNING "
-                        f"phase={phase} elapsed_seconds={elapsed:.1f}",
+                        f"TRAIN_STALL_WARNING phase={phase} elapsed_seconds={elapsed:.1f}",
                         flush=True,
                     )
                     faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
@@ -125,6 +158,8 @@ def _start_progress_watchdog() -> threading.Event:
     )
     thread.start()
     return stop
+
+
 REGIME_FEATURE_CANDIDATES = (
     "pre_minutes_trend_l3_vs_l10",
     "pre_fga_trend_l3_vs_l10",
@@ -503,6 +538,252 @@ def _benchmark_point_residual_stable(
     }
 
 
+def _training_signal_oof_history(
+    *,
+    x: np.ndarray,
+    y: np.ndarray,
+    naive: np.ndarray,
+    residual_target: np.ndarray,
+    feature_names: list[str],
+    train_mask: np.ndarray,
+    timestamps: list[Any],
+    selected: dict[str, Any],
+) -> dict[str, Any]:
+    """Build chronological E2023 out-of-fold signal history for pattern calibration."""
+    train_indices = np.flatnonzero(train_mask)
+    ordered = sorted(
+        (int(index) for index in train_indices),
+        key=lambda index: (str(timestamps[index]), index),
+    )
+    chunks = [
+        np.asarray(chunk, dtype=int)
+        for chunk in np.array_split(np.asarray(ordered, dtype=int), MODEL10_PATTERN_OOF_BLOCKS)
+        if len(chunk)
+    ]
+    if len(chunks) < 2:
+        return {
+            "indices": np.asarray([], dtype=int),
+            "actual": np.asarray([], dtype=float),
+            "naive": np.asarray([], dtype=float),
+            "predicted": np.asarray([], dtype=float),
+            "fingerprints": [],
+            "temporal_blocks": [],
+            "folds": [],
+        }
+
+    all_indices: list[int] = []
+    all_actual: list[float] = []
+    all_naive: list[float] = []
+    all_predicted: list[float] = []
+    all_fingerprints: list[dict[str, Any]] = []
+    all_temporal_blocks: list[int] = []
+    fold_rows: list[dict[str, Any]] = []
+
+    for fold_number in range(1, len(chunks)):
+        history_indices = np.concatenate(chunks[:fold_number])
+        evaluation_indices = chunks[fold_number]
+        history_mask = np.zeros(len(x), dtype=bool)
+        evaluation_mask = np.zeros(len(x), dtype=bool)
+        history_mask[history_indices] = True
+        evaluation_mask[evaluation_indices] = True
+
+        model = build_model(selected["family"], selected["params"])
+        model.fit(x[history_mask], residual_target[history_mask])
+        raw_delta = np.asarray(model.predict(x[evaluation_mask]), dtype=float)
+
+        gate_result = _fit_regime_gate(
+            x,
+            feature_names,
+            residual_target,
+            history_mask,
+            evaluation_mask,
+        )
+        gate_score = np.asarray(gate_result["validation_score"], dtype=float)
+        gate = selected["regime_gate_floor"] + (1.0 - selected["regime_gate_floor"]) * gate_score
+
+        matchup_result = _fit_matchup_adjustment(
+            x,
+            feature_names,
+            residual_target,
+            history_mask,
+            evaluation_mask,
+        )
+        matchup_delta = np.asarray(matchup_result["validation_delta"], dtype=float)
+        delta = (
+            raw_delta * selected["residual_shrinkage"] * gate
+            + matchup_delta * selected["matchup_shrinkage"]
+        )
+        prediction = naive[evaluation_mask] + delta
+
+        contributions = ablation_signal_contributions(
+            model=model,
+            reference_x=x[history_mask],
+            evaluation_x=x[evaluation_mask],
+            feature_names=feature_names,
+            residual_scale=selected["residual_shrinkage"],
+            row_gate=gate,
+        )
+        matchup_signal = matchup_delta * selected["matchup_shrinkage"]
+        if "matchup_opponent" in contributions:
+            contributions["matchup_opponent"] = contributions["matchup_opponent"] + matchup_signal
+        else:
+            contributions["matchup_opponent"] = matchup_signal
+
+        efficiency_labels = classify_efficiency_cycles(
+            x=x[evaluation_mask],
+            feature_names=feature_names,
+        )
+        contributions = filter_noisy_signal_contributions(
+            contributions=contributions,
+            x=x[evaluation_mask],
+            feature_names=feature_names,
+            efficiency_labels=efficiency_labels,
+        )
+        fingerprints = build_signal_fingerprints(
+            contributions,
+            delta,
+            contribution_floor_points=0.25,
+        )
+
+        all_indices.extend(int(index) for index in evaluation_indices)
+        all_actual.extend(float(value) for value in y[evaluation_mask])
+        all_naive.extend(float(value) for value in naive[evaluation_mask])
+        all_predicted.extend(float(value) for value in prediction)
+        all_fingerprints.extend(fingerprints)
+        all_temporal_blocks.extend([fold_number] * len(evaluation_indices))
+        fold_rows.append(
+            {
+                "fold": fold_number,
+                "history_rows": len(history_indices),
+                "evaluation_rows": len(evaluation_indices),
+            }
+        )
+
+    return {
+        "indices": np.asarray(all_indices, dtype=int),
+        "actual": np.asarray(all_actual, dtype=float),
+        "naive": np.asarray(all_naive, dtype=float),
+        "predicted": np.asarray(all_predicted, dtype=float),
+        "fingerprints": all_fingerprints,
+        "temporal_blocks": all_temporal_blocks,
+        "folds": fold_rows,
+    }
+
+
+def _fit_cold_context_adjustment(
+    *,
+    x: np.ndarray,
+    feature_names: list[str],
+    validation_mask: np.ndarray,
+    training_signal_oof: dict[str, Any],
+) -> dict[str, Any]:
+    """Learn a cold-state residual model from E2023 chronological OOF history only."""
+    context_features = cold_context_feature_columns(feature_names)
+    feature_positions = [feature_names.index(name) for name in context_features]
+    oof_indices = np.asarray(training_signal_oof["indices"], dtype=int)
+    temporal_blocks = np.asarray(training_signal_oof["temporal_blocks"], dtype=int)
+    oof_actual = np.asarray(training_signal_oof["actual"], dtype=float)
+    oof_predicted = np.asarray(training_signal_oof["predicted"], dtype=float)
+    oof_residual = oof_actual - oof_predicted
+
+    empty_validation = np.zeros(int(np.sum(validation_mask)), dtype=float)
+    if not len(oof_indices) or not context_features:
+        return {
+            "active": False,
+            "model": None,
+            "features": context_features,
+            "training_cold_rows": 0,
+            "temporal_stability": {"passed": False, "eligible_blocks": 0, "blocks": []},
+            "validation_cold_rows": 0,
+            "validation_delta": empty_validation,
+            "reason": "insufficient_oof_or_features",
+        }
+
+    oof_x = x[oof_indices][:, feature_positions]
+    oof_hand = _feature_column(
+        x[oof_indices],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    oof_cold = oof_hand < 0.0
+
+    if int(np.sum(oof_cold)) < COLD_CONTEXT_MIN_TRAIN_ROWS:
+        return {
+            "active": False,
+            "model": None,
+            "features": context_features,
+            "training_cold_rows": int(np.sum(oof_cold)),
+            "temporal_stability": {"passed": False, "eligible_blocks": 0, "blocks": []},
+            "validation_cold_rows": 0,
+            "validation_delta": empty_validation,
+            "reason": "insufficient_cold_training_rows",
+        }
+
+    temporal_residual: list[float] = []
+    temporal_correction: list[float] = []
+    temporal_eval_blocks: list[int] = []
+    unique_blocks = sorted(set(int(value) for value in temporal_blocks[oof_cold]))
+
+    for block in unique_blocks[1:]:
+        history_mask = oof_cold & (temporal_blocks < block)
+        evaluation_mask = oof_cold & (temporal_blocks == block)
+        if (
+            int(np.sum(history_mask)) < COLD_CONTEXT_MIN_TRAIN_ROWS
+            or int(np.sum(evaluation_mask)) < COLD_CONTEXT_MIN_BLOCK_ROWS
+        ):
+            continue
+
+        model = build_model(COLD_CONTEXT_MODEL_FAMILY, COLD_CONTEXT_MODEL_PARAMS)
+        model.fit(oof_x[history_mask], oof_residual[history_mask])
+        correction = np.asarray(model.predict(oof_x[evaluation_mask]), dtype=float)
+
+        temporal_residual.extend(float(value) for value in oof_residual[evaluation_mask])
+        temporal_correction.extend(float(value) for value in correction)
+        temporal_eval_blocks.extend([block] * int(np.sum(evaluation_mask)))
+
+    if temporal_residual:
+        temporal_stability = cold_context_temporal_stability(
+            residual=np.asarray(temporal_residual, dtype=float),
+            correction=np.asarray(temporal_correction, dtype=float),
+            temporal_blocks=temporal_eval_blocks,
+            min_block_rows=COLD_CONTEXT_MIN_BLOCK_ROWS,
+        )
+    else:
+        temporal_stability = {"passed": False, "eligible_blocks": 0, "blocks": []}
+
+    final_model = build_model(COLD_CONTEXT_MODEL_FAMILY, COLD_CONTEXT_MODEL_PARAMS)
+    final_model.fit(oof_x[oof_cold], oof_residual[oof_cold])
+
+    validation_hand = _feature_column(
+        x[validation_mask],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    validation_cold = validation_hand < 0.0
+    validation_delta = empty_validation.copy()
+    if bool(temporal_stability["passed"]) and np.any(validation_cold):
+        validation_x = x[validation_mask][:, feature_positions]
+        validation_delta[validation_cold] = np.asarray(
+            final_model.predict(validation_x[validation_cold]),
+            dtype=float,
+        )
+
+    return {
+        "active": bool(temporal_stability["passed"]),
+        "model": final_model,
+        "family": COLD_CONTEXT_MODEL_FAMILY,
+        "params": COLD_CONTEXT_MODEL_PARAMS,
+        "features": context_features,
+        "training_cold_rows": int(np.sum(oof_cold)),
+        "temporal_stability": temporal_stability,
+        "validation_cold_rows": int(np.sum(validation_cold)),
+        "validation_delta": validation_delta,
+        "reason": None if temporal_stability["passed"] else "temporal_stability_failed",
+    }
+
+
 def _benchmark_validation_target(
     x: np.ndarray,
     y: np.ndarray,
@@ -657,9 +938,22 @@ def _write_validation_predictions(
     actual: np.ndarray,
     naive: np.ndarray,
     predicted: np.ndarray,
+    calibrated_predicted: np.ndarray,
+    efficiency_adjusted_predicted: np.ndarray,
+    cold_context_adjusted_predicted: np.ndarray,
+    cold_context_correction: np.ndarray,
+    signal_fingerprints: list[dict[str, Any]],
+    signal_contributions: dict[str, np.ndarray],
+    learned_pattern_effects: dict[str, dict[str, Any]],
+    efficiency_cycle_labels: list[str],
+    learned_efficiency_cycle_effects: dict[str, dict[str, Any]],
+    diagnostic_features: list[str],
+    auxiliary_actual: dict[str, np.ndarray],
+    auxiliary_predicted: dict[str, np.ndarray],
 ) -> None:
+    """Write a full validation mart so signal analysis does not require retraining."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fields = (
+    identity_fields = (
         "season_code",
         "gamecode",
         "game_date",
@@ -669,36 +963,195 @@ def _write_validation_predictions(
         "opponent_team_code",
     )
     validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
+    contribution_fields = [
+        f"signal_{domain}_contribution_points" for domain in sorted(signal_contributions)
+    ]
+    auxiliary_fields = [
+        *sorted(auxiliary_actual),
+        *sorted(auxiliary_predicted),
+    ]
+    reserved = set(identity_fields) | {
+        "actual_points",
+        "naive_points",
+        "predicted_points",
+        "calibrated_predicted_points",
+        "efficiency_adjusted_predicted_points",
+        "cold_context_adjusted_predicted_points",
+        "cold_context_correction_points",
+        "pattern_calibration_correction_points",
+        "pattern_stable_direction",
+        "pattern_temporal_stability_passed",
+        "pattern_temporal_eligible_blocks",
+        "pattern_temporal_effect_points",
+        "pattern_temporal_block_means",
+        "efficiency_modifier_points",
+        "efficiency_temporal_stability_passed",
+        "efficiency_temporal_eligible_blocks",
+        "efficiency_temporal_effect_points",
+        "efficiency_temporal_block_means",
+        "prediction_error",
+        "absolute_error",
+        "signal_tier",
+        "supporting_signal_count",
+        "situation_fingerprint",
+        "supporting_domains",
+        "opposing_domains",
+        "efficiency_cycle_state",
+    }
+    diagnostic_fields = [name for name in diagnostic_features if name not in reserved]
+
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=[
-                *fields,
+                *identity_fields,
                 "actual_points",
                 "naive_points",
                 "predicted_points",
+                "calibrated_predicted_points",
+                "efficiency_adjusted_predicted_points",
+                "cold_context_adjusted_predicted_points",
+                "cold_context_correction_points",
+                "pattern_calibration_correction_points",
+                "pattern_stable_direction",
+                "pattern_temporal_stability_passed",
+                "pattern_temporal_eligible_blocks",
+                "pattern_temporal_effect_points",
+                "pattern_temporal_block_means",
+                "efficiency_modifier_points",
+                "efficiency_temporal_stability_passed",
+                "efficiency_temporal_eligible_blocks",
+                "efficiency_temporal_effect_points",
+                "efficiency_temporal_block_means",
                 "prediction_error",
                 "absolute_error",
+                "signal_tier",
+                "supporting_signal_count",
+                "situation_fingerprint",
+                "supporting_domains",
+                "opposing_domains",
+                "efficiency_cycle_state",
+                *contribution_fields,
+                *auxiliary_fields,
+                *diagnostic_fields,
             ],
         )
         writer.writeheader()
-        for row, y_true, baseline, y_pred in zip(
-            validation_rows,
-            actual,
-            naive,
-            predicted,
-            strict=True,
-        ):
-            writer.writerow(
-                {
-                    **{field: row[index[field]] for field in fields},
-                    "actual_points": round(float(y_true), 4),
-                    "naive_points": round(float(baseline), 4),
-                    "predicted_points": round(float(y_pred), 4),
-                    "prediction_error": round(float(y_pred - y_true), 4),
-                    "absolute_error": round(float(abs(y_pred - y_true)), 4),
-                }
+
+        contribution_domains = sorted(signal_contributions)
+        for position, (
+            row,
+            y_true,
+            baseline,
+            y_pred,
+            calibrated_y_pred,
+            efficiency_y_pred,
+            cold_context_y_pred,
+            cold_correction,
+            signal_row,
+            cycle_label,
+        ) in enumerate(
+            zip(
+                validation_rows,
+                actual,
+                naive,
+                predicted,
+                calibrated_predicted,
+                efficiency_adjusted_predicted,
+                cold_context_adjusted_predicted,
+                cold_context_correction,
+                signal_fingerprints,
+                efficiency_cycle_labels,
+                strict=True,
             )
+        ):
+            learned_pattern = learned_pattern_effects.get(str(signal_row["fingerprint"]))
+            pattern_correction = (
+                float(learned_pattern["calibration_correction_points"])
+                if learned_pattern and bool(learned_pattern.get("stable_direction"))
+                else 0.0
+            )
+            learned_efficiency = learned_efficiency_cycle_effects.get(str(cycle_label))
+            efficiency_modifier = float(efficiency_y_pred - y_pred)
+
+            record: dict[str, Any] = {
+                **{field: row[index[field]] for field in identity_fields},
+                "actual_points": round(float(y_true), 4),
+                "naive_points": round(float(baseline), 4),
+                "predicted_points": round(float(y_pred), 4),
+                "calibrated_predicted_points": round(float(calibrated_y_pred), 4),
+                "efficiency_adjusted_predicted_points": round(float(efficiency_y_pred), 4),
+                "cold_context_adjusted_predicted_points": round(float(cold_context_y_pred), 4),
+                "cold_context_correction_points": round(float(cold_correction), 4),
+                "pattern_calibration_correction_points": round(pattern_correction, 4),
+                "pattern_stable_direction": bool(
+                    learned_pattern and learned_pattern.get("stable_direction")
+                ),
+                "pattern_temporal_stability_passed": bool(
+                    learned_pattern and learned_pattern.get("temporal_stability_passed")
+                ),
+                "pattern_temporal_eligible_blocks": (
+                    int(learned_pattern.get("temporal_eligible_blocks", 0))
+                    if learned_pattern
+                    else 0
+                ),
+                "pattern_temporal_effect_points": round(
+                    float(learned_pattern.get("temporal_effect_points", 0.0))
+                    if learned_pattern
+                    else 0.0,
+                    4,
+                ),
+                "pattern_temporal_block_means": json.dumps(
+                    learned_pattern.get("temporal_block_mean_corrections", {})
+                    if learned_pattern
+                    else {},
+                    sort_keys=True,
+                ),
+                "efficiency_modifier_points": round(efficiency_modifier, 4),
+                "efficiency_temporal_stability_passed": bool(
+                    learned_efficiency
+                    and learned_efficiency.get("temporal_stability_passed")
+                ),
+                "efficiency_temporal_eligible_blocks": (
+                    int(learned_efficiency.get("temporal_eligible_blocks", 0))
+                    if learned_efficiency
+                    else 0
+                ),
+                "efficiency_temporal_effect_points": round(
+                    float(learned_efficiency.get("temporal_effect_points", 0.0))
+                    if learned_efficiency
+                    else 0.0,
+                    4,
+                ),
+                "efficiency_temporal_block_means": json.dumps(
+                    learned_efficiency.get("temporal_block_mean_residuals", {})
+                    if learned_efficiency
+                    else {},
+                    sort_keys=True,
+                ),
+                "prediction_error": round(float(y_pred - y_true), 4),
+                "absolute_error": round(float(abs(y_pred - y_true)), 4),
+                "signal_tier": signal_row["signal_tier"],
+                "supporting_signal_count": signal_row["supporting_signal_count"],
+                "situation_fingerprint": signal_row["fingerprint"],
+                "supporting_domains": "|".join(signal_row["supporting_domains"]),
+                "opposing_domains": "|".join(signal_row["opposing_domains"]),
+                "efficiency_cycle_state": cycle_label,
+            }
+
+            for domain in contribution_domains:
+                record[f"signal_{domain}_contribution_points"] = round(
+                    float(signal_contributions[domain][position]),
+                    4,
+                )
+            for name, values in auxiliary_actual.items():
+                record[name] = round(float(values[position]), 4)
+            for name, values in auxiliary_predicted.items():
+                record[name] = round(float(values[position]), 4)
+            for name in diagnostic_fields:
+                record[name] = row[index[name]]
+
+            writer.writerow(record)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -821,6 +1274,181 @@ def main(argv: list[str] | None = None) -> int:
     validation_delta = point_result["validation_prediction"]
     validation_naive = naive[validation_mask]
     validation_prediction = validation_naive + validation_delta
+
+    all_efficiency_cycle_labels = classify_efficiency_cycles(
+        x=x,
+        feature_names=feature_names,
+    )
+    validation_efficiency_cycle_labels = [
+        label
+        for label, selected in zip(
+            all_efficiency_cycle_labels,
+            validation_mask,
+            strict=True,
+        )
+        if selected
+    ]
+
+    _set_progress("situation_signal_attribution")
+    signal_contributions = ablation_signal_contributions(
+        model=point_result["model"],
+        reference_x=x[train_mask],
+        evaluation_x=x[validation_mask],
+        feature_names=feature_names,
+        residual_scale=point_result["selected"]["residual_shrinkage"],
+        row_gate=point_result["selected_regime_gate"],
+    )
+    matchup_signal = (
+        np.asarray(matchup_adjustment["validation_delta"], dtype=float)
+        * point_result["selected"]["matchup_shrinkage"]
+    )
+    if "matchup_opponent" in signal_contributions:
+        signal_contributions["matchup_opponent"] = (
+            signal_contributions["matchup_opponent"] + matchup_signal
+        )
+    else:
+        signal_contributions["matchup_opponent"] = matchup_signal
+
+    signal_contributions = filter_noisy_signal_contributions(
+        contributions=signal_contributions,
+        x=x[validation_mask],
+        feature_names=feature_names,
+        efficiency_labels=validation_efficiency_cycle_labels,
+    )
+    signal_fingerprints = build_signal_fingerprints(
+        signal_contributions,
+        validation_delta,
+        contribution_floor_points=0.25,
+    )
+    signal_tier_summary = summarize_signal_tiers(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+    )
+    repeating_signal_patterns = summarize_repeating_patterns(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        min_occurrences=3,
+    )
+    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
+    pattern_stability = summarize_pattern_stability(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        groups={
+            "game": [
+                f"{row[index['season_code']]}:{row[index['gamecode']]}" for row in validation_rows
+            ],
+            "player": [str(row[index["player_id"]]) for row in validation_rows],
+            "team": [str(row[index["team_code"]]) for row in validation_rows],
+            "month": [str(row[index["game_date"]])[:7] for row in validation_rows],
+        },
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+    )
+
+    _set_progress("model10_training_pattern_oof")
+    training_signal_oof = _training_signal_oof_history(
+        x=x,
+        y=y,
+        naive=naive,
+        residual_target=point_delta,
+        feature_names=feature_names,
+        train_mask=train_mask,
+        timestamps=timestamps,
+        selected=point_result["selected"],
+    )
+    learned_pattern_effects = learn_pattern_effects(
+        actual=training_signal_oof["actual"],
+        naive=training_signal_oof["naive"],
+        predicted=training_signal_oof["predicted"],
+        fingerprints=training_signal_oof["fingerprints"],
+        temporal_blocks=training_signal_oof["temporal_blocks"],
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+        prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
+    )
+    calibrated_validation_prediction = apply_pattern_effects(
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        learned_effects=learned_pattern_effects,
+    )
+    calibrated_validation_metrics = _metric_summary(
+        y[validation_mask],
+        calibrated_validation_prediction,
+    )
+
+    _set_progress("model10_cold_context")
+    cold_context = _fit_cold_context_adjustment(
+        x=x,
+        feature_names=feature_names,
+        validation_mask=validation_mask,
+        training_signal_oof=training_signal_oof,
+    )
+    cold_context_adjusted_prediction = (
+        validation_prediction + np.asarray(cold_context["validation_delta"], dtype=float)
+    )
+    cold_context_adjusted_metrics = _metric_summary(
+        y[validation_mask],
+        cold_context_adjusted_prediction,
+    )
+    validation_hand_state = _feature_column(
+        x[validation_mask],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    validation_cold_mask = validation_hand_state < 0.0
+    cold_context_validation_metrics = {
+        "rows": int(np.sum(validation_cold_mask)),
+        "base": (
+            _metric_summary(
+                y[validation_mask][validation_cold_mask],
+                validation_prediction[validation_cold_mask],
+            )
+            if np.any(validation_cold_mask)
+            else None
+        ),
+        "adjusted": (
+            _metric_summary(
+                y[validation_mask][validation_cold_mask],
+                cold_context_adjusted_prediction[validation_cold_mask],
+            )
+            if np.any(validation_cold_mask)
+            else None
+        ),
+    }
+
+    _set_progress("model10_efficiency_cycle")
+    training_efficiency_cycle_labels = [
+        all_efficiency_cycle_labels[int(position)] for position in training_signal_oof["indices"]
+    ]
+    learned_efficiency_cycle_effects = learn_efficiency_cycle_effects(
+        actual=training_signal_oof["actual"],
+        predicted=training_signal_oof["predicted"],
+        labels=training_efficiency_cycle_labels,
+        temporal_blocks=training_signal_oof["temporal_blocks"],
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+        prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
+    )
+    efficiency_cycle_summary = summarize_efficiency_cycles(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        labels=validation_efficiency_cycle_labels,
+    )
+    efficiency_cycle_adjusted_prediction = apply_efficiency_cycle_effects(
+        predicted=validation_prediction,
+        labels=validation_efficiency_cycle_labels,
+        learned_effects=learned_efficiency_cycle_effects,
+    )
+    efficiency_cycle_adjusted_metrics = _metric_summary(
+        y[validation_mask],
+        efficiency_cycle_adjusted_prediction,
+    )
 
     minutes_y = np.asarray([float(row[index["target_minutes"]]) for row in rows], dtype=float)
     fga_y = np.asarray([float(row[index["target_fga"]]) for row in rows], dtype=float)
@@ -962,7 +1590,6 @@ def main(argv: list[str] | None = None) -> int:
         timestamps=timestamps,
         eligible_mask=train_mask | validation_mask,
     )
-    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
     volatility_index = feature_names.index("pre_l10_points_std")
     volatility_values = x[validation_mask, volatility_index]
     finite_volatility = volatility_values[np.isfinite(volatility_values)]
@@ -1039,6 +1666,16 @@ def main(argv: list[str] | None = None) -> int:
         },
         "dropped_untrainable_features": dropped_untrainable_features,
         "dropped_untrainable_feature_count": len(dropped_untrainable_features),
+        "temporal_signal_stability_policy": {
+            "training_source": "E2023 chronological OOF blocks only",
+            "rule": (
+                "Learned pattern and efficiency modifiers must keep the same sign "
+                "across eligible chronological OOF blocks. Sign-flip or insufficient "
+                "temporal evidence neutralizes the modifier to zero."
+            ),
+            "effect_estimator": "median of eligible chronological block means",
+            "validation_season_used_for_weights": False,
+        },
         "dropped_feature_details": dropped_feature_details,
         "training_feature_screen": {
             "minimum_e2023_finite_coverage": MIN_TRAIN_FEATURE_COVERAGE,
@@ -1072,6 +1709,67 @@ def main(argv: list[str] | None = None) -> int:
             "validation_delta_abs_mean": matchup_adjustment.get("validation_delta_abs_mean"),
             "selected_shrinkage": point_result["selected"]["matchup_shrinkage"],
         },
+        "model10_situation_signals": {
+            "status": "MODEL10_1_TRAIN_ONLY_PATTERN_CALIBRATION",
+            "contribution_floor_points": 0.25,
+            "domains": {
+                domain: [feature_names[position] for position in positions]
+                for domain, positions in signal_domain_columns(feature_names).items()
+            },
+            "tier_summary": signal_tier_summary,
+            "repeating_patterns_min_occurrences": 3,
+            "repeating_patterns": repeating_signal_patterns,
+            "pattern_stability_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+            "pattern_stability": pattern_stability,
+            "efficiency_cycle_modifier": {
+                "status": "TRAIN_ONLY_OOF_CANDIDATE",
+                "states": (
+                    "hot_start, hot_mature, hot_peak_regression, "
+                    "hot_cooling_decline, cold_decline, "
+                    "cold_efficiency_only, cold_recovery, neutral"
+                ),
+                "training_source": args.train_season,
+                "training_method": "chronological_out_of_fold_residuals",
+                "learned_effects": learned_efficiency_cycle_effects,
+                "validation_summary": efficiency_cycle_summary,
+                "validation_metrics_after_modifier": efficiency_cycle_adjusted_metrics,
+                "validation_mae_change_vs_base": (
+                    efficiency_cycle_adjusted_metrics["mae"] - validation_metrics["mae"]
+                ),
+                "interpretation": (
+                    "Hot/cold is treated as a phase modifier, not an independent "
+                    "signal count. Player-relative peak hot states can learn a negative "
+                    "modifier when E2023 OOF residuals show regression; cold states "
+                    "with falling FGA/minutes are separated from efficiency-only cold."
+                ),
+            },
+            "training_only_pattern_calibration": {
+                "source_season": args.train_season,
+                "method": "chronological_out_of_fold",
+                "oof_blocks": MODEL10_PATTERN_OOF_BLOCKS,
+                "oof_rows": len(training_signal_oof["indices"]),
+                "folds": training_signal_oof["folds"],
+                "min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+                "prior_strength": MODEL10_PATTERN_PRIOR_STRENGTH,
+                "learned_pattern_count": len(learned_pattern_effects),
+                "learned_effects": learned_pattern_effects,
+                "validation_metrics_after_calibration": calibrated_validation_metrics,
+                "validation_mae_change_vs_uncalibrated": (
+                    calibrated_validation_metrics["mae"] - validation_metrics["mae"]
+                ),
+                "policy": (
+                    "Pattern magnitude corrections are learned only from chronological "
+                    "out-of-fold rows in the training season. E2024 outcomes never set "
+                    "a calibration magnitude."
+                ),
+            },
+            "interpretation": (
+                "Signal tiers count independent basketball situation domains whose "
+                "ablation contribution supports the model correction. Repeated-pattern "
+                "hit rates measure correction direction versus the naive projection; "
+                "they are not bookmaker-line betting hit rates."
+            ),
+        },
         "validation_temporal_stability": {
             "positive_folds": point_result["selected"]["positive_folds"],
             "median_fold_mae_improvement_vs_naive": point_result["selected"][
@@ -1085,6 +1783,21 @@ def main(argv: list[str] | None = None) -> int:
         "validation_points": validation_metrics,
         "naive_points_baseline": naive_metrics,
         "role_base_points": role_base_metrics,
+        "cold_context_model": {
+            "active": cold_context["active"],
+            "family": cold_context.get("family"),
+            "params": cold_context.get("params"),
+            "features": cold_context["features"],
+            "training_cold_rows": cold_context["training_cold_rows"],
+            "temporal_stability": cold_context["temporal_stability"],
+            "validation_cold_rows": cold_context["validation_cold_rows"],
+            "validation_all_rows_after_adjustment": cold_context_adjusted_metrics,
+            "validation_cold_rows_metrics": cold_context_validation_metrics,
+            "rule": (
+                "Cold context learns residual direction and magnitude from E2023 "
+                "chronological OOF rows only; no manual point modifier is assigned."
+            ),
+        },
         "auxiliary_targets": {
             "minutes": {
                 "validation_leaderboard": minutes_result["validation_leaderboard"],
@@ -1154,6 +1867,18 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
 
+    full_diagnostic_features = diagnostic_feature_columns(columns)
+    report["diagnostic_export"] = {
+        "mode": "full_validation_mart",
+        "pregame_feature_count": len(full_diagnostic_features),
+        "signal_domains": sorted(signal_contributions),
+        "includes_auxiliary_targets": ["minutes", "fga", "3pa", "fta"],
+        "purpose": (
+            "Analyze and tune signal logic from one completed validation run without "
+            "retraining merely to expose another diagnostic column."
+        ),
+    }
+
     _set_progress("write_artifacts")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1170,6 +1895,15 @@ def main(argv: list[str] | None = None) -> int:
                 "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
                 "regime_gate_floor": point_result["selected"]["regime_gate_floor"],
                 "matchup_shrinkage": point_result["selected"]["matchup_shrinkage"],
+                "pattern_calibration_effects": learned_pattern_effects,
+                "pattern_calibration_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+                "pattern_calibration_prior_strength": MODEL10_PATTERN_PRIOR_STRENGTH,
+                "cold_context_model": cold_context["model"],
+                "cold_context_model_family": cold_context.get("family"),
+                "cold_context_model_params": cold_context.get("params"),
+                "cold_context_features": cold_context["features"],
+                "cold_context_temporal_stability": cold_context["temporal_stability"],
+                "cold_context_active": cold_context["active"],
                 "regime_gate_model": regime_gate["model"],
                 "regime_gate_features": regime_gate["features"],
                 "regime_gate_q25_abs_residual": regime_gate["train_q25_abs_residual"],
@@ -1196,6 +1930,28 @@ def main(argv: list[str] | None = None) -> int:
         y[validation_mask],
         validation_naive,
         validation_prediction,
+        calibrated_validation_prediction,
+        efficiency_cycle_adjusted_prediction,
+        cold_context_adjusted_prediction,
+        np.asarray(cold_context["validation_delta"], dtype=float),
+        signal_fingerprints,
+        signal_contributions,
+        learned_pattern_effects,
+        validation_efficiency_cycle_labels,
+        learned_efficiency_cycle_effects,
+        full_diagnostic_features,
+        {
+            "actual_3pa": three_pa_y[validation_mask],
+            "actual_fga": fga_y[validation_mask],
+            "actual_fta": fta_y[validation_mask],
+            "actual_minutes": minutes_y[validation_mask],
+        },
+        {
+            "predicted_3pa": predicted_3pa,
+            "predicted_fga": predicted_fga,
+            "predicted_fta": predicted_fta,
+            "predicted_minutes": predicted_minutes,
+        },
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
@@ -1207,6 +1963,42 @@ def main(argv: list[str] | None = None) -> int:
     print(f"regime_gate={json.dumps(report['regime_gate'], sort_keys=True)}")
     print("matchup_adjustment=" + json.dumps(report["matchup_adjustment"], sort_keys=True))
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
+    print(
+        "model10_cold_context="
+        + json.dumps(
+            {
+                "active": cold_context["active"],
+                "training_cold_rows": cold_context["training_cold_rows"],
+                "temporal_stability": cold_context["temporal_stability"],
+                "validation_cold_rows": cold_context["validation_cold_rows"],
+                "validation_all_rows_after_adjustment": cold_context_adjusted_metrics,
+                "validation_cold_rows_metrics": cold_context_validation_metrics,
+            },
+            sort_keys=True,
+        )
+    )
+    print(
+        "model10_efficiency_cycle="
+        + json.dumps(
+            {
+                "learned_effects": learned_efficiency_cycle_effects,
+                "validation_summary": efficiency_cycle_summary,
+                "validation_metrics_after_modifier": efficiency_cycle_adjusted_metrics,
+            },
+            sort_keys=True,
+        )
+    )
+    print(
+        "model10_pattern_calibration="
+        + json.dumps(
+            {
+                "oof_rows": len(training_signal_oof["indices"]),
+                "learned_pattern_count": len(learned_pattern_effects),
+                "validation_metrics_after_calibration": calibrated_validation_metrics,
+            },
+            sort_keys=True,
+        )
+    )
     print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
     print("grouped_source_importance=" + json.dumps(grouped_source_importance[:10], sort_keys=True))
     print(f"validation_controls={json.dumps(report['validation_controls'], sort_keys=True)}")

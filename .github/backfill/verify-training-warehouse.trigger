@@ -5,3 +5,4 @@ cache-enabled verifier run
 verify from cached warehouse snapshot
 rebuild snapshot after bookmaker migration hash change
 rebuild snapshot for model2 current migration hash 2026-10-06
+model10_snapshot_rebuild=2026-10-06T18:10:00+02:00

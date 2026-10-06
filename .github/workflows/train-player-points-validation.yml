@@ -3,7 +3,7 @@ name: Validate player-points ML signals
 on:
   workflow_dispatch:
   push:
-    branches: [feat/acb-ingestion]
+    branches: [feat/acb-ingestion, feat/player-points-model10-situation-signals]
     paths:
       - .github/ml-validation.request
 
@@ -86,7 +86,15 @@ jobs:
           gzip -dc .training-snapshot/warehouse.sql.gz |
             docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1
 
+      - name: Refresh restored warehouse planner statistics
+        run: |
+          POSTGRES_CONTAINER="$(docker ps --filter ancestor=postgres:17 --format '{{.ID}}' | head -n 1)"
+          test -n "$POSTGRES_CONTAINER"
+          docker exec "$POSTGRES_CONTAINER" \
+            psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1 -c "ANALYZE;"
+
       - name: Train regime-gated role model and validate on E2024
+        timeout-minutes: 90
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
           PGOPTIONS: "-c search_path=warehouse"

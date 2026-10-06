@@ -1392,6 +1392,19 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 as hand_pre_l10_ts_mean,
             round(stddev_samp(game_ts_proxy) over hand_w10, 4)
                 as hand_pre_l10_ts_std,
+            round(
+                (sum(field_goals_made - three_pointers_made) over hand_w10)::numeric
+                / nullif(
+                    sum(field_goals_attempted - three_pointers_attempted) over hand_w10,
+                    0
+                ),
+                4
+            ) as hand_pre_l10_2p_pct,
+            round(
+                (sum(three_pointers_made) over hand_w10)::numeric
+                / nullif(sum(three_pointers_attempted) over hand_w10, 0),
+                4
+            ) as hand_pre_l10_3p_pct,
             round(avg(seconds_played::numeric / 60.0) over hand_w5, 3)
                 as hand_pre_l5_minutes,
             round(avg(field_goals_attempted::numeric) over hand_w5, 3)
@@ -1409,31 +1422,130 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 rows between 10 preceding and 1 preceding
             )
     ),
-    player_hand_classified as (
+    player_hand_evidence as (
         select
             *,
             round(game_ts_proxy - hand_pre_l10_ts_mean, 4)
                 as hand_eff_delta_vs_prior_l10,
+            greatest(
+                0.05,
+                0.75 * coalesce(hand_pre_l10_ts_std, 0)
+            ) as hand_ts_threshold,
+            round(
+                (
+                    field_goals_made - three_pointers_made
+                )::numeric
+                / nullif(
+                    field_goals_attempted - three_pointers_attempted,
+                    0
+                ),
+                4
+            ) as hand_game_2p_pct,
+            round(
+                three_pointers_made::numeric
+                / nullif(three_pointers_attempted, 0),
+                4
+            ) as hand_game_3p_pct,
+            round(
+                (
+                    field_goals_made - three_pointers_made
+                )::numeric
+                / nullif(
+                    field_goals_attempted - three_pointers_attempted,
+                    0
+                )
+                - hand_pre_l10_2p_pct,
+                4
+            ) as hand_2p_delta_vs_prior_l10,
+            round(
+                three_pointers_made::numeric
+                / nullif(three_pointers_attempted, 0)
+                - hand_pre_l10_3p_pct,
+                4
+            ) as hand_3p_delta_vs_prior_l10,
+            round(
+                (
+                    coalesce(
+                        2.0 * (
+                            (field_goals_made - three_pointers_made)::numeric
+                            - (
+                                field_goals_attempted - three_pointers_attempted
+                            )::numeric * hand_pre_l10_2p_pct
+                        ),
+                        0
+                    )
+                    + coalesce(
+                        3.0 * (
+                            three_pointers_made::numeric
+                            - three_pointers_attempted::numeric
+                                * hand_pre_l10_3p_pct
+                        ),
+                        0
+                    )
+                )
+                / nullif(
+                    sqrt(
+                        coalesce(
+                            4.0
+                            * (
+                                field_goals_attempted - three_pointers_attempted
+                            )::numeric
+                            * least(greatest(hand_pre_l10_2p_pct, 0.05), 0.95)
+                            * (
+                                1.0
+                                - least(
+                                    greatest(hand_pre_l10_2p_pct, 0.05),
+                                    0.95
+                                )
+                            ),
+                            0
+                        )
+                        + coalesce(
+                            9.0
+                            * three_pointers_attempted::numeric
+                            * least(greatest(hand_pre_l10_3p_pct, 0.05), 0.95)
+                            * (
+                                1.0
+                                - least(
+                                    greatest(hand_pre_l10_3p_pct, 0.05),
+                                    0.95
+                                )
+                            ),
+                            0
+                        )
+                    ),
+                    0
+                ),
+                4
+            ) as hand_shot_profile_z
+        from player_hand_baseline
+    ),
+    player_hand_classified as (
+        select
+            *,
+            round(
+                sqrt(
+                    power(
+                        hand_eff_delta_vs_prior_l10
+                        / nullif(hand_ts_threshold, 0),
+                        2
+                    )
+                    + power(coalesce(hand_shot_profile_z, 0), 2)
+                ),
+                4
+            ) as hand_evidence_strength,
             case
                 when hand_pre_history_games < 5
                   or game_ts_proxy is null
                   or hand_pre_l10_ts_mean is null
                     then 0
-                when game_ts_proxy - hand_pre_l10_ts_mean
-                    >= greatest(
-                        0.05,
-                        0.75 * coalesce(hand_pre_l10_ts_std, 0)
-                    )
+                when hand_eff_delta_vs_prior_l10 >= hand_ts_threshold
                     then 1
-                when game_ts_proxy - hand_pre_l10_ts_mean
-                    <= -greatest(
-                        0.05,
-                        0.75 * coalesce(hand_pre_l10_ts_std, 0)
-                    )
+                when hand_eff_delta_vs_prior_l10 <= -hand_ts_threshold
                     then -1
                 else 0
             end as hand_state
-        from player_hand_baseline
+        from player_hand_evidence
     ),
     player_hand_changes as (
         select
@@ -1790,6 +1902,26 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 lag(hand_eff_delta_vs_prior_l10) over wall,
                 4
             ) as pre_last_ts_delta_vs_prior_l10,
+            (lag(field_goals_attempted) over wall
+                - lag(three_pointers_attempted) over wall) as pre_last_2pa,
+            round(lag(hand_game_2p_pct) over wall, 4) as pre_last_2p_pct,
+            round(lag(hand_game_3p_pct) over wall, 4) as pre_last_3p_pct,
+            round(
+                lag(hand_2p_delta_vs_prior_l10) over wall,
+                4
+            ) as pre_last_2p_delta_vs_prior_l10,
+            round(
+                lag(hand_3p_delta_vs_prior_l10) over wall,
+                4
+            ) as pre_last_3p_delta_vs_prior_l10,
+            round(
+                lag(hand_shot_profile_z) over wall,
+                4
+            ) as pre_last_shot_profile_z,
+            round(
+                lag(hand_evidence_strength) over wall,
+                4
+            ) as pre_last_hand_evidence_strength,
             case
                 when prev_hand_state = 1
                     then coalesce(prev_hand_run_length, 0)

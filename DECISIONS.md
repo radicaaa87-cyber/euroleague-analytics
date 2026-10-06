@@ -5194,3 +5194,262 @@ migration remain separate tasks with their own tests and owner approval.
 alone. A persistent identity row must retain every original source id and the
 evidence used to approve the link. Ambiguous or incomplete evidence stays in a
 review state rather than being guessed.
+
+## 88. MODEL 10 situation signals are independent basketball domains, not feature counts
+
+**Decided 2026-10-06 by the owner**, while continuing player-points model
+development from the locked run-9 checkpoint.
+
+**Decision.** The run-9 player-points predictor remains the frozen baseline.
+MODEL 10 adds an explanatory and calibration layer that groups correlated
+pre-game features into independent basketball situation domains before assigning
+a signal count. The current domains are role/volume, rotation,
+availability/absence, matchup/opponent, pace/environment, schedule/load,
+lineup combinations, efficiency state, and season/team transition.
+
+A signal is not one feature. Multiple features that describe the same mechanism
+(for example minutes trend, FGA trend and option rank all describing a role
+change) count as one role/volume confirmation. For each validation row, the
+selected model is re-scored after one domain is neutralized to the training
+median. The change in prediction is that domain's local contribution for that
+row. The separately learned matchup adjustment is folded into the same matchup
+domain so it is not hidden outside the fingerprint.
+
+MODEL 10 stores a per-row situation fingerprint and a 0/1/2/3+ count of
+independent domains that support the model's correction direction. It also
+reports repeated fingerprints and their historical directional reliability.
+
+**Why.** Global feature importance answers which inputs matter on average but
+does not answer why one player's line moved today. The betting model needs
+repeatable basketball situations: role expansion after an absence, rotation
+promotion, workload pressure, a favorable matchup, or another mechanism that
+has occurred before. Counting correlated columns as separate confirmations
+would create false confidence.
+
+**Validation boundary.** The current repeatability metric is whether the model
+correction from the leakage-safe naive projection moved in the same direction
+as the realized scoring change. It is **not bookmaker-line hit rate**. The
+owner's intended calibration target is that the strongest 3+ class should
+eventually exceed roughly 58% against real central bookmaker lines on a locked
+out-of-sample sample. That claim cannot be made until historical bookmaker
+margins are joined with timestamp-safe provenance and evaluated without
+retuning the same sample.
+
+**What this does not establish.** Domain ablation is an attribution diagnostic,
+not proof of causality. Correlated domains can still interact, training medians
+are a neutral-reference convention rather than a counterfactual truth, and a
+repeated fingerprint can be too rare to generalize. MODEL 10 therefore remains
+a validation layer until repeated patterns survive an untouched sample.
+
+**Condition.** No 1/2/3+ tier may be described as a betting hit-rate tier until
+it has been measured against locked bookmaker central lines. No rule may be
+retuned from the blind season after its outcomes are opened.
+
+
+
+## 89. User-supplied bookmaker PDFs use a local single-pass batch path
+
+**Decided 2026-10-06 by the owner**, after a small historical Mozzart batch took
+hours through a fragmented manual workflow.
+
+**Decision.** When the PDF bytes are already available, ingestion must not run
+web discovery and must not resolve or insert one offer at a time. A PDF, folder,
+or ZIP is read once; text extraction and player-points parsing happen in memory;
+athlete candidates are loaded once; source documents are bulk-upserted; offers
+are bulk-inserted; historical game linking runs as a separate batch against the
+verified warehouse snapshot.
+
+Raw PDF identity is preserved by SHA-256 and source name. Re-importing the same
+document is idempotent through the existing document/row uniqueness constraints.
+
+**Why.** Network discovery, repeated PDF handling, and per-row database
+round-trips add latency without improving the evidence. Historical bookmaker
+archives are small enough to parse locally in one pass. The model pipeline is
+not changed by this decision; bookmaker lines remain a separate validation
+dataset.
+
+**Condition.** For user-supplied PDFs, any slower path must first show a measured
+correctness requirement that the batch path cannot satisfy. Performance reports
+must expose documents seen, offers parsed/inserted, errors, and elapsed seconds.
+Game links and uncertain athlete identities remain conservative: unresolved
+rows are kept rather than guessed.
+
+
+## 90. ML data flow is layered and model upgrades do not silently change ingestion
+
+**Decided 2026-10-06 by the owner**, after repeated delays caused by mixing data
+collection, storage work and model experimentation.
+
+**Decision.** The project uses five explicit layers: immutable source archive,
+normalized source tables, canonical/derived warehouse, verified training snapshot,
+and model artifacts/validation marts. A model-version change normally operates only
+on the model/artifact layer and may consume new derived features, but it must not
+silently change how historical data is fetched, parsed, restored or identified.
+
+The MODEL 9 training dataset extraction remains the frozen baseline contract for
+MODEL 10 development. Snapshot restore may refresh PostgreSQL planner statistics
+with ANALYZE because that changes execution planning only, not rows, features or
+model semantics.
+
+Already-owned source files are processed locally once and written in bulk. Network
+discovery is for missing source material only. Expensive derived basketball history
+is built once and reused. Historical game and athlete linking are batch operations.
+
+**Why.** Large-data model development becomes slow and error-prone when every model
+experiment re-fetches or re-parses source data. Separation makes model iteration
+cheap while keeping source provenance and blind validation reproducible.
+
+**Storage pressure.** Hosted high-volume event data is a hot-window concern, not a
+reason to destroy history. Cold/archive transitions require immutable source proof,
+a successful rebuild test, verification, and explicit owner approval before any
+destructive production operation.
+
+**Condition.** Any future change that modifies both model logic and the ingest/storage
+path must be split into separately measured changes. Performance work must report
+batch counts and elapsed time so regressions are visible immediately.
+
+
+## 91. The E2024 bookmaker sample is a frozen evaluation holdout
+
+**Decided 2026-10-06 by the owner**, after the first direct MODEL 10 comparison
+against historical player-points lines.
+
+**Decision.** The currently linked E2024 bookmaker sample is frozen for repeated
+evaluation only. It contains 131 linked offers; 107 currently have a matching
+locked E2024 validation prediction. The holdout definition and integrity hash are
+recorded in `data/bookmaker_e2024_holdout_manifest.json`.
+
+Bookmaker line, odds, realized result, and thresholds learned from this holdout
+must not be used as training inputs for the base player-points model. Future model
+versions are evaluated on the same holdout so changes can be compared directly.
+
+**Why.** Reusing the same bookmaker sample as both training evidence and the test
+would make apparent betting improvement impossible to distinguish from retuning
+to the test set.
+
+**Condition.** New historical bookmaker offers may be collected into the source
+database, but they do not silently enter this frozen holdout. A larger holdout or
+a market-residual training set must be versioned separately.
+
+
+## 92. Learned signal weights require temporal stability and are not season-average carryovers
+
+**Decided 2026-10-06 by the owner**, while refining MODEL 10 signal logic.
+
+**Decision.** The player-points model is predictive, not a table of last-season
+average effects. A historical signal must not receive a fixed future modifier
+merely because its pooled mean was positive or negative in the previous season.
+
+Learned pattern and efficiency modifiers are estimated only from chronological
+out-of-fold training history. The training history is divided into time-ordered
+blocks. A modifier may influence a future prediction only when its direction is
+stable across eligible blocks. If the learned effect changes sign across those
+blocks, or there is insufficient temporal evidence, the modifier is neutralized
+to zero until a more specific basketball context explains the instability.
+
+When the direction is stable, the effect estimate is based on the median of the
+eligible chronological block means and is then shrunk by sample support. A dense
+period therefore cannot dominate the effect simply because it contributes more
+rows to one pooled seasonal average.
+
+**Why.** A signal that appears to be +0.5 points in one period and -1.0 in
+another can damage generalization if the earlier average is carried forward as
+truth. The model must learn repeatable predictive relationships and distinguish
+context-dependent effects from unstable averages.
+
+**Validation boundary.** E2024 may measure whether this rule generalizes, but
+E2024 outcomes must not be used to choose the sign, weight, threshold, or block
+effect. E2025 remains blind until the model is explicitly locked for the blind
+test.
+
+**Condition.** Sign-flipping learned modifiers are zero by default. They may be
+reactivated only after a pre-game context split shows a stable direction using
+training-only chronological evidence. This rule changes model logic only and
+does not change ingestion, warehouse, snapshot, or source-processing behavior.
+
+
+## 93. Every validation run exports a full diagnostic mart
+
+**Decided 2026-10-06 by the owner**, after repeated validation reruns were needed
+only to expose one additional signal column.
+
+**Decision.** Each player-points validation run must export one row-level diagnostic
+mart for the validation season containing all available pre-game features, local
+signal-domain contributions, situation fingerprints and tiers, hot/cold state,
+pattern and efficiency modifiers with temporal-stability metadata, base and adjusted
+point predictions, and auxiliary actual/predicted minutes, FGA, 3PA and FTA.
+
+The diagnostic mart is an analysis artifact, not a new model input. It exists so
+signal logic can be inspected, segmented and tuned from one completed run without
+retraining merely to expose another diagnostic column.
+
+**Why.** Model fitting and feature construction dominate runtime; writing a wider
+validation artifact is cheap by comparison. Persisting the full mart separates
+model training from downstream diagnostic analysis and reduces repeated training
+cycles.
+
+**Condition.** The export must contain only information already available to the
+completed validation run. This decision does not change source ingestion, warehouse
+rows, training features, model weights or blind-season policy. E2025 remains closed
+until explicitly opened under the existing blind-test rules.
+
+
+## 94. COLD context is learned conditionally from E2023 OOF, not assigned a fixed rebound bonus
+
+**Decided 2026-10-07 by the owner**, after reviewing the full E2024 diagnostic mart.
+
+**Decision.** A cold shooting state is not a standalone PLUS or MINUS modifier.
+MODEL 10 learns a dedicated cold-context residual model using only chronological
+E2023 out-of-fold rows where the player entered the game in a cold state.
+
+The cold-context model may use existing pre-game efficiency depth/duration,
+minutes and FGA trends, and role/option evidence such as team FGA share, scoring
+opportunity share and option rank. It learns both direction and magnitude from
+the data; no fixed point bonus or penalty is assigned to combinations such as
+COLD + MIN up + FGA up.
+
+The module is evaluated chronologically inside E2023. It may affect E2024
+predictions only when its learned correction improves every sufficiently sized
+eligible E2023 temporal evaluation block. Otherwise its correction is zero.
+
+**Why.** Rising minutes and attempts during a cold spell describe preserved or
+expanding opportunity, but do not by themselves prove an imminent rebound.
+Conditioning on role and offensive status allows the model to distinguish
+different cold situations without turning a small E2024 subgroup into a manual
+rule.
+
+**Validation boundary.** E2024 is evaluation only for this module and does not
+choose the correction direction or magnitude. The frozen bookmaker holdout is
+evaluation only. E2025 remains unopened.
+
+**Condition.** This is model-layer logic only. It does not alter ingestion,
+warehouse storage, snapshot construction, or source processing.
+
+
+## 95. HOT/COLD efficiency evidence includes personal 2P/3P baselines and attempt-weighted shot evidence
+
+**Decided 2026-10-07 by the owner.**
+
+**Decision.** The broad HOT/COLD gate remains anchored to the player's total shooting
+efficiency relative to his own prior-L10 baseline, but MODEL 10 now also carries
+shot-type-specific evidence for the most recent game:
+
+- 2P% versus the player's prior-L10 2P%;
+- 3P% versus the player's prior-L10 3P%;
+- 2P and 3P attempt volume;
+- an attempt-weighted standardized shot-profile residual;
+- a combined efficiency-evidence magnitude.
+
+The standardized shot-profile residual compares made 2P/3P field goals with the
+number expected from the player's own prior-L10 percentages and scales the
+difference by binomial shooting variance. Therefore the same percentage on a larger
+number of attempts supplies stronger evidence than the same percentage on only a few
+attempts.
+
+**Use.** These are pre-game features for the next game and are available to the base
+predictor, COLD-context learner, full diagnostic mart, and efficiency-cycle
+classification. They do not create a fixed point bonus or penalty. MIN and FGA role
+trends remain a separate causal context rather than part of the HOT/COLD definition.
+
+**Boundary.** This is model feature/logic only; ingestion and warehouse architecture
+are unchanged. E2024 remains validation and E2025 remains unopened.
