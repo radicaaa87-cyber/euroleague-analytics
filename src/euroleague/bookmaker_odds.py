@@ -77,10 +77,7 @@ class ParsedOffer:
 
     @property
     def row_sha256(self) -> str:
-        payload = (
-            f"{self.bookmaker}|{self.page_number}|{self.source_event_code}|"
-            f"{self.row_text}"
-        )
+        payload = f"{self.bookmaker}|{self.page_number}|{self.source_event_code}|{self.row_text}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
