@@ -52,6 +52,8 @@ jobs:
               "postgresql://postgres:postgres@localhost:5433/postgres",
               autocommit=True,
           ) as connection:
+              connection.execute("create role anon nologin")
+              connection.execute("create role authenticated nologin")
               connection.execute("create database euroleague_test")
           PY
       - name: Restore checksum-verified training archives
