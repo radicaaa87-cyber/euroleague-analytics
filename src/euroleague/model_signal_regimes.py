@@ -546,15 +546,6 @@ def classify_efficiency_cycles(
     for row in range(matrix.shape[0]):
         avg_episode = avg_hot[row]
         max_episode = max_hot[row]
-        maturity_games = max(
-            2.0,
-            0.8 * avg_episode if np.isfinite(avg_episode) and avg_episode > 0 else 3.0,
-        )
-        near_max_games = max(
-            2.0,
-            0.8 * max_episode if np.isfinite(max_episode) and max_episode > 0 else 4.0,
-        )
-
         ts_short_gap = (
             l3_ts[row] - l10_ts[row]
             if np.isfinite(l3_ts[row]) and np.isfinite(l10_ts[row])
