@@ -36,8 +36,28 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
             (["season_code"], [("E2026",)]),
             (["player_id"], [("P009862",)]),
             (
-                ["player_id", "player_name", "history_games", "l10_minutes"],
-                [("P009862", "PUNTER, KEVIN", 10, 25.1)],
+                [
+                    "player_id",
+                    "player_name",
+                    "history_games",
+                    "l10_minutes",
+                    "recent_games",
+                ],
+                [
+                    (
+                        "P009862",
+                        "PUNTER, KEVIN",
+                        10,
+                        25.1,
+                        [
+                            {
+                                "team": "BAR",
+                                "opponent": "MAD",
+                                "home": False,
+                            }
+                        ],
+                    )
+                ],
             ),
             (
                 [
@@ -46,6 +66,10 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
                     "l10_pbp_stint_count",
                 ],
                 [(10, 48.2, 22.1)],
+            ),
+            (
+                ["history_games", "l5_minutes", "l5_fga", "recent_games"],
+                [(0, None, None, None)],
             ),
             (
                 [
@@ -90,7 +114,13 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
         "E2026",
     )
     assert response["row_count"] == 1
+    assert "v_athlete_game_history" in cursor.statements[4]
+    assert cursor.parameters[4] == (
+        "P009862",
+        "2026-10-05T00:00:00+00:00",
+    )
     assert response["rows"][0]["pbp_history_games"] == 10
+    assert response["rows"][0]["acb_recent_form"]["history_games"] == 0
     assert response["minutes_basis"]["value"] == "official"
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
@@ -149,6 +179,30 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
             ),
             (
                 [
+                    "history_games",
+                    "l3_minutes",
+                    "l5_minutes",
+                    "l3_fga",
+                    "l5_fga",
+                    "games_last_7d",
+                    "minutes_last_7d",
+                    "recent_games",
+                ],
+                [
+                    (
+                        4,
+                        27.2,
+                        26.5,
+                        12.0,
+                        11.4,
+                        2,
+                        53.0,
+                        [{"date": "2026-10-07", "points": 19, "fga": 12}],
+                    )
+                ],
+            ),
+            (
+                [
                     "opponent_l5_games",
                     "opponent_l5_off_rating",
                     "opponent_l5_def_rating",
@@ -189,12 +243,22 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
         "gamecode": 44,
         "player_id": "P009862",
     }
-    assert cursor.parameters[5] == ("E2026", "OLY", "2026-10-10")
+    assert "v_athlete_game_history" in cursor.statements[5]
+    assert cursor.parameters[5] == (
+        "P009862",
+        dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
+    )
+    assert cursor.parameters[6] == ("E2026", "OLY", "2026-10-10")
     row = response["rows"][0]
     assert row["target_gamecode"] == 44
     assert row["opponent_team_code"] == "OLY"
     assert row["pregame_role_context"]["teammate_out_vacated_minutes_l5"] == 18.4
     assert row["pregame_role_context"]["context_max_source_confidence"] == 0.95
+    assert row["acb_recent_form"]["l5_minutes"] == 26.5
+    assert row["acb_recent_form"]["l5_fga"] == 11.4
+    assert row["travel_context"]["target_venue_team_code"] == "BAR"
+    assert row["travel_context"]["from_last_game_venue_team_code"] == "MAD"
+    assert row["travel_context"]["air_km_from_last_game"] is not None
 
 
 def test_model_context_rejects_nonpositive_gamecode() -> None:
@@ -242,6 +306,10 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_opponent_l5_def_rating" in sql
     assert "pre_days_rest" in sql
     assert "pre_hours_rest" in sql
+    assert "pre_travel_air_km" in sql
+    assert "travel_air_km_to_game" in sql
+    assert "role_prev_team_code" in sql
+    assert "role_prev_opponent_team_code" in sql
     assert "pre_last_was_away" in sql
     assert "pre_l5_away_rate" in sql
     assert "pre_away_games_last_3" in sql
