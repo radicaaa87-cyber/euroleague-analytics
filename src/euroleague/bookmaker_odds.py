@@ -55,9 +55,28 @@ STARBET_OTHER_MARKERS = (
 MOZZART_SECTION_MARKERS = ("kosarka igraci",)
 MOZZART_POINTS_MARKER = "broj poena igraca na mecu"
 MOZZART_EUROLEAGUE_TEAM_TAGS = {
-    "Alb", "Arm", "Asv", "Baj", "Bar", "Bas", "Bes", "Crv", "Dub", "Efe",
-    "Fen", "Hap", "Mak", "Mon", "Oli", "Pan", "Par", "Prz", "Rea", "Val",
-    "Vir", "Žal",
+    "Alb",
+    "Arm",
+    "Asv",
+    "Baj",
+    "Bar",
+    "Bas",
+    "Bes",
+    "Crv",
+    "Dub",
+    "Efe",
+    "Fen",
+    "Hap",
+    "Mak",
+    "Mon",
+    "Oli",
+    "Pan",
+    "Par",
+    "Prz",
+    "Rea",
+    "Val",
+    "Vir",
+    "Žal",
 }
 GENERIC_EUROLEAGUE_MARKERS = ("evroliga", "euroleague")
 GENERIC_PLAYER_POINTS_MARKERS = (
@@ -425,6 +444,7 @@ def parse_starbet_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]
 
     return offers
 
+
 def _generic_player_points_odds_order(key: str) -> str:
     """Infer whether a table prints under or over odds first from its header."""
     under_positions = [pos for token in ("manje", "under") if (pos := key.find(token)) >= 0]
@@ -463,9 +483,7 @@ def parse_generic_euroleague_player_points_pages(
                 in_points = False
                 lines_since_header = 0
 
-            if euroleague_seen and any(
-                marker in key for marker in GENERIC_PLAYER_POINTS_MARKERS
-            ):
+            if euroleague_seen and any(marker in key for marker in GENERIC_PLAYER_POINTS_MARKERS):
                 in_points = True
                 odds_order = _generic_player_points_odds_order(key)
                 lines_since_header = 0
@@ -502,4 +520,3 @@ def parse_meridian_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer
 
 def parse_millennium_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
     return parse_generic_euroleague_player_points_pages(pages, bookmaker="millennium")
-
