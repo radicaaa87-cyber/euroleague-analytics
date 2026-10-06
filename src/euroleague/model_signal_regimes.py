@@ -425,12 +425,7 @@ def learn_pattern_effects(
     actual_values = np.asarray(actual, dtype=float)
     naive_values = np.asarray(naive, dtype=float)
     predicted_values = np.asarray(predicted, dtype=float)
-    if not (
-        len(actual_values)
-        == len(naive_values)
-        == len(predicted_values)
-        == len(fingerprints)
-    ):
+    if not (len(actual_values) == len(naive_values) == len(predicted_values) == len(fingerprints)):
         raise ValueError("actual, naive, predicted and fingerprints must align.")
 
     model_delta = predicted_values - naive_values
@@ -465,9 +460,7 @@ def learn_pattern_effects(
             "directional_correction_hit_rate": float(np.mean(hits[selected])),
             "raw_correction_points": raw_correction,
             "shrinkage_weight": weight,
-            "calibration_correction_points": raw_correction * weight
-            if stable_direction
-            else 0.0,
+            "calibration_correction_points": raw_correction * weight if stable_direction else 0.0,
             "stable_direction": stable_direction,
         }
 
