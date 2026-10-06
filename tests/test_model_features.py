@@ -40,6 +40,7 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
                     "player_id",
                     "player_name",
                     "history_games",
+                    "last_team_code",
                     "l10_minutes",
                     "recent_games",
                 ],
@@ -48,6 +49,7 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
                         "P009862",
                         "PUNTER, KEVIN",
                         10,
+                        "BAR",
                         25.1,
                         [
                             {
@@ -192,6 +194,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
                     "teammate_out_vacated_minutes_l5",
                     "teammate_out_vacated_fga_l5",
                     "same_position_out_vacated_minutes_l5",
+                    "teammate_availability",
                     "teammate_max_source_confidence",
                     "context_max_source_confidence",
                     "context_feature_cutoff_time",
@@ -208,6 +211,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
                         18.4,
                         6.2,
                         12.1,
+                        [{"player_id": "PTEAM1", "out_score": 0.95, "doubt_score": 0}],
                         0.95,
                         0.95,
                         dt.datetime(2026, 10, 10, 9, 0, tzinfo=dt.UTC),
@@ -329,6 +333,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert row["opponent_team_code"] == "OLY"
     assert row["pregame_role_context"]["teammate_out_vacated_minutes_l5"] == 18.4
     assert row["pregame_role_context"]["context_max_source_confidence"] == 0.95
+    assert row["pregame_role_context"]["teammate_availability"][0]["player_id"] == "PTEAM1"
     assert row["acb_recent_form"]["l5_minutes"] == 26.5
     assert row["acb_recent_form"]["l5_fga"] == 11.4
     assert row["travel_context"]["target_venue_team_code"] == "BAR"
