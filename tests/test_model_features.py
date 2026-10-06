@@ -132,7 +132,15 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
 
     summary_sql = cursor.statements[2]
     assert "p.utc_date::date < %s" in summary_sql
-    assert cursor.parameters[2] == ("E2026", "P009862", "2026-10-05", 10)
+    assert cursor.parameters[2] == (
+        "E2026",
+        "P009862",
+        "2026-10-05",
+        "E2026",
+        "P009862",
+        "2026-10-05",
+        10,
+    )
     pbp_sql = cursor.statements[3]
     assert "complete reconstructed" not in pbp_sql.lower()
     assert "v_possession" in pbp_sql
