@@ -42,6 +42,7 @@ MCP — see `DECISIONS.md` item 10 for why this rather than the Supabase CLI.
 | `0035_model_registry` | Adds the private model registry for immutable model versions, artifact checksums/locations, training lineage, feature lists, metrics and lifecycle status. A partial unique index permits at most one `production` version per model family; `el_reader` and `el_tester` receive read-only access. **Applied on 2026-10-05 UTC as `20261005214945`** through the Supabase MCP. |
 | `0036_model_artifact_bucket` | Adds the private `model-artifacts` Supabase Storage bucket for immutable trained-model files. The migration is storage-schema-aware so the stock PostgreSQL migration gate can still run; rollback refuses to remove a non-empty artifact bucket. **Applied on 2026-10-05 UTC as `20261005215528`** through the Supabase MCP. |
 | `0037_pregame_context` | Adds the private leakage-safe `pregame_context_event` archive plus player/team context feature views for evidence published inside the 72-hour window before tipoff. Post-tipoff evidence is excluded by consumers; public API roles remain revoked and `el_reader`/`el_tester` receive read-only access. |
+| `0038_pregame_context_collection` | Adds an independent audit of pregame context collection runs so the model can distinguish searched-with-no-signal from historical games where context collection never ran. Stores query success/failure, players queried, items seen and inserted-event counts; read-only for `el_reader`/`el_tester`. |
 
 ## The 0013 rehearsal, 2026-08-27
 
