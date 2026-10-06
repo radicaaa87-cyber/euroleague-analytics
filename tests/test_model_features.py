@@ -132,8 +132,22 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
             (["season_code"], [("E2026",)]),
             (["player_id"], [("P009862",)]),
             (
-                ["player_id", "player_name", "history_games", "l10_minutes"],
-                [("P009862", "PUNTER, KEVIN", 10, 25.1)],
+                [
+                    "player_id",
+                    "player_name",
+                    "history_games",
+                    "l10_minutes",
+                    "recent_games",
+                ],
+                [
+                    (
+                        "P009862",
+                        "PUNTER, KEVIN",
+                        10,
+                        25.1,
+                        [{"team": "BAR", "opponent": "MAD", "home": False}],
+                    )
+                ],
             ),
             (
                 [
