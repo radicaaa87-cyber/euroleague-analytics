@@ -669,6 +669,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         select
             *,
             lag(is_starter) over role_all as role_prev_starter,
+            lag(is_home) over role_all as role_prev_is_home,
             round(
                 avg(seconds_played::numeric / 60.0) over role_w5,
                 3
@@ -735,7 +736,13 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 when role_prev_starter = true and not is_starter
                     then 1
                 else 0
-            end as starter_demotion_event
+            end as starter_demotion_event,
+            case
+                when role_prev_is_home is not null
+                 and is_home is distinct from role_prev_is_home
+                    then 1
+                else 0
+            end as home_away_switch_event
         from player_role_baseline
     ),
     player_role_reasons as (
@@ -1305,6 +1312,28 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 ) / 86400.0,
                 3
             ) as pre_days_rest,
+            round(
+                extract(
+                    epoch from (
+                        game_tipoff_utc
+                        - lag(game_tipoff_utc) over wall
+                    )
+                ) / 3600.0,
+                2
+            ) as pre_hours_rest,
+            lag(not is_home) over wall as pre_last_was_away,
+            round(
+                avg(case when not is_home then 1.0 else 0.0 end) over w5,
+                4
+            ) as pre_l5_away_rate,
+            sum(case when not is_home then 1 else 0 end) over w3
+                as pre_away_games_last_3,
+            sum(case when not is_home then 1 else 0 end) over w7d
+                as pre_away_games_last_7d,
+            sum(case when not is_home then 1 else 0 end) over w14d
+                as pre_away_games_last_14d,
+            round(avg(home_away_switch_event::numeric) over w5, 4)
+                as pre_l5_home_away_switch_rate,
             count(*) over w7d as pre_games_last_7d,
             count(*) over w14d as pre_games_last_14d,
             round(sum(seconds_played::numeric / 60.0) over w7d, 3)
@@ -1716,6 +1745,13 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l10_starter_rate,
         pf.pre_last_was_starter,
         pf.pre_days_rest,
+        pf.pre_hours_rest,
+        pf.pre_last_was_away,
+        pf.pre_l5_away_rate,
+        pf.pre_away_games_last_3,
+        pf.pre_away_games_last_7d,
+        pf.pre_away_games_last_14d,
+        pf.pre_l5_home_away_switch_rate,
         pf.pre_games_last_7d,
         pf.pre_games_last_14d,
         pf.pre_minutes_last_7d,
