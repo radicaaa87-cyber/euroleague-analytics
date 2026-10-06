@@ -247,6 +247,8 @@ def _write_predictions(
     actual_fta: np.ndarray,
     predicted_fta: np.ndarray,
     role_base_points: np.ndarray,
+    uncertainty_band: list[str],
+    uncertainty_intervals: dict[str, np.ndarray],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -274,6 +276,12 @@ def _write_predictions(
         "predicted_delta_vs_naive",
         "actual_points",
         "predicted_points",
+        "uncertainty_band",
+        "p10_points",
+        "p25_points",
+        "p50_points",
+        "p75_points",
+        "p90_points",
         "prediction_error",
         "absolute_error",
     ]
@@ -295,6 +303,12 @@ def _write_predictions(
             ft_true,
             ft_pred,
             role_base,
+            uncertainty_label,
+            p10,
+            p25,
+            p50,
+            p75,
+            p90,
         ) in zip(
             metadata,
             actual,
@@ -310,6 +324,12 @@ def _write_predictions(
             actual_fta,
             predicted_fta,
             role_base_points,
+            uncertainty_band,
+            uncertainty_intervals["p10"],
+            uncertainty_intervals["p25"],
+            uncertainty_intervals["p50"],
+            uncertainty_intervals["p75"],
+            uncertainty_intervals["p90"],
             strict=True,
         ):
             writer.writerow(
@@ -330,6 +350,12 @@ def _write_predictions(
                     "predicted_delta_vs_naive": round(float(delta_pred), 4),
                     "actual_points": round(float(y_true), 4),
                     "predicted_points": round(float(y_pred), 4),
+                    "uncertainty_band": uncertainty_label,
+                    "p10_points": round(float(p10), 4),
+                    "p25_points": round(float(p25), 4),
+                    "p50_points": round(float(p50), 4),
+                    "p75_points": round(float(p75), 4),
+                    "p90_points": round(float(p90), 4),
                     "prediction_error": round(float(y_pred - y_true), 4),
                     "absolute_error": round(float(abs(y_pred - y_true)), 4),
                 }
