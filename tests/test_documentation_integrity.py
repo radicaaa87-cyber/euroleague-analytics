@@ -39,6 +39,7 @@ NOT_OUR_CONFIGURATION = {
     "PORT",  # supplied by Fly at runtime, not configured by hand
     "HOST",  # same: the address the container binds, given by the platform
     "GITHUB_RUN_ID",  # written by the Actions runner
+    "GITHUB_SHA",  # written by the Actions runner for the checked-out commit
     "RUNNER_OS",  # same
     "EL_MCP_TOKEN",  # deliberately absent: a credential that must never be
     # written to a file, including an example one. See
