@@ -405,6 +405,47 @@ def test_efficiency_cycle_classifier_uses_player_personal_hot_history() -> None:
     ]
 
 
+def test_efficiency_cycle_uses_attempt_weighted_shot_profile_evidence() -> None:
+    features = [
+        "pre_last_hand_state",
+        "pre_last_ts_delta_vs_prior_l10",
+        "pre_last_shot_profile_z",
+        "pre_last_hand_evidence_strength",
+        "pre_hot_streak_games",
+        "pre_cold_streak_games",
+        "pre_avg_hot_episode_games",
+        "pre_avg_cold_episode_games",
+        "pre_max_hot_episode_games",
+        "pre_max_cold_episode_games",
+        "pre_l3_ts_proxy",
+        "pre_l5_ts_proxy",
+        "pre_l10_ts_proxy",
+        "pre_l3_fga",
+        "pre_l5_fga",
+        "pre_l10_fga",
+        "pre_l3_minutes",
+        "pre_l5_minutes",
+        "pre_l10_minutes",
+    ]
+    x = np.asarray(
+        [
+            # Same TS context, but weak shot-profile evidence: remain mature hot.
+            [1, 0.06, 0.35, 1.05, 4, 0, 3, 0, 5, 0, 0.61, 0.60, 0.58, 10, 10, 10, 28, 28, 28],
+            # Same TS context with attempt-weighted shot evidence: regression candidate.
+            [1, 0.06, 1.40, 1.75, 4, 0, 3, 0, 5, 0, 0.61, 0.60, 0.58, 10, 10, 10, 28, 28, 28],
+            # Cold mirror: strong negative shot evidence makes the cold extreme explicit.
+            [-1, -0.06, -1.45, 1.80, 0, 4, 0, 3, 0, 5, 0.54, 0.55, 0.57, 10, 10, 10, 28, 28, 28],
+        ],
+        dtype=float,
+    )
+
+    labels = classify_efficiency_cycles(x=x, feature_names=features)
+
+    assert labels[0] == "hot_mature"
+    assert labels[1] == "hot_peak_regression"
+    assert labels[2] == "cold_regression_up"
+
+
 def test_efficiency_cycle_effect_learning_can_make_mature_hot_a_minus_modifier() -> None:
     actual = np.asarray([8.0, 9.0, 10.0, 11.0])
     predicted = np.asarray([10.0, 10.0, 10.0, 10.0])
@@ -520,6 +561,10 @@ def test_cold_context_uses_role_volume_and_option_context_without_fixed_effects(
         "pre_last_hand_state",
         "pre_cold_streak_games",
         "pre_last_ts_delta_vs_prior_l10",
+        "pre_last_2p_delta_vs_prior_l10",
+        "pre_last_3p_delta_vs_prior_l10",
+        "pre_last_shot_profile_z",
+        "pre_last_hand_evidence_strength",
         "pre_minutes_trend_l3_vs_l10",
         "pre_fga_trend_l3_vs_l10",
         "pre_role2_team_fga_share_trend_l3_vs_l10",
@@ -532,6 +577,8 @@ def test_cold_context_uses_role_volume_and_option_context_without_fixed_effects(
     selected = cold_context_feature_columns(columns)
 
     assert "pre_cold_streak_games" in selected
+    assert "pre_last_shot_profile_z" in selected
+    assert "pre_last_hand_evidence_strength" in selected
     assert "pre_minutes_trend_l3_vs_l10" in selected
     assert "pre_fga_trend_l3_vs_l10" in selected
     assert "pre_role2_l5_option_rank" in selected
