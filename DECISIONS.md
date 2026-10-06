@@ -5392,3 +5392,35 @@ cycles.
 completed validation run. This decision does not change source ingestion, warehouse
 rows, training features, model weights or blind-season policy. E2025 remains closed
 until explicitly opened under the existing blind-test rules.
+
+
+## 94. COLD context is learned conditionally from E2023 OOF, not assigned a fixed rebound bonus
+
+**Decided 2026-10-07 by the owner**, after reviewing the full E2024 diagnostic mart.
+
+**Decision.** A cold shooting state is not a standalone PLUS or MINUS modifier.
+MODEL 10 learns a dedicated cold-context residual model using only chronological
+E2023 out-of-fold rows where the player entered the game in a cold state.
+
+The cold-context model may use existing pre-game efficiency depth/duration,
+minutes and FGA trends, and role/option evidence such as team FGA share, scoring
+opportunity share and option rank. It learns both direction and magnitude from
+the data; no fixed point bonus or penalty is assigned to combinations such as
+COLD + MIN up + FGA up.
+
+The module is evaluated chronologically inside E2023. It may affect E2024
+predictions only when its learned correction improves every sufficiently sized
+eligible E2023 temporal evaluation block. Otherwise its correction is zero.
+
+**Why.** Rising minutes and attempts during a cold spell describe preserved or
+expanding opportunity, but do not by themselves prove an imminent rebound.
+Conditioning on role and offensive status allows the model to distinguish
+different cold situations without turning a small E2024 subgroup into a manual
+rule.
+
+**Validation boundary.** E2024 is evaluation only for this module and does not
+choose the correction direction or magnitude. The frozen bookmaker holdout is
+evaluation only. E2025 remains unopened.
+
+**Condition.** This is model-layer logic only. It does not alter ingestion,
+warehouse storage, snapshot construction, or source processing.
