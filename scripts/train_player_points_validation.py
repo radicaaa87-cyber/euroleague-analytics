@@ -1373,7 +1373,7 @@ def main(argv: list[str] | None = None) -> int:
             "efficiency_cycle_modifier": {
                 "status": "TRAIN_ONLY_OOF_CANDIDATE",
                 "states": (
-                    "hot_start, hot_mature, hot_regression_risk, "
+                    "hot_start, hot_mature, hot_peak_regression, "
                     "hot_cooling_decline, cold_decline, "
                     "cold_efficiency_only, cold_recovery, neutral"
                 ),
@@ -1387,7 +1387,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "interpretation": (
                     "Hot/cold is treated as a phase modifier, not an independent "
-                    "signal count. Mature/extreme hot states can learn a negative "
+                    "signal count. Player-relative peak hot states can learn a negative "
                     "modifier when E2023 OOF residuals show regression; cold states "
                     "with falling FGA/minutes are separated from efficiency-only cold."
                 ),
