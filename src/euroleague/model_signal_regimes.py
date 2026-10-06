@@ -558,6 +558,15 @@ def apply_pattern_effects(
     return calibrated
 
 
+def diagnostic_feature_columns(columns: list[str]) -> list[str]:
+    """Return all pre-game diagnostic columns without target leakage."""
+    return [
+        name
+        for name in columns
+        if name == "is_home" or name.startswith("pre_")
+    ]
+
+
 def _feature_column(
     x: np.ndarray,
     feature_names: list[str],
