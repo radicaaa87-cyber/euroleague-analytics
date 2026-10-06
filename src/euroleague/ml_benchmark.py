@@ -358,6 +358,24 @@ def candidate_specs() -> tuple[ModelCandidate, ...]:
     )
 
 
+def auxiliary_candidate_specs() -> tuple[ModelCandidate, ...]:
+    """Return a compact one-per-family grid for auxiliary role targets.
+
+    The final points residual keeps the full validation grid. Auxiliary targets
+    only need a stable family representative, so re-running all 24 candidates
+    for minutes/FGA/3PA/FTA wastes most of the training time.
+    """
+    keep_ids = {
+        "ridge_3",
+        "extra_2",
+        "hist_2",
+        "xgb_2",
+        "cat_2",
+        "lgbm_2",
+    }
+    return tuple(spec for spec in candidate_specs() if spec.candidate_id in keep_ids)
+
+
 def build_model(family: str, params: dict[str, Any]) -> Any:
     """Construct one estimator; heavy ML libraries are imported only for training."""
     if family == "ridge":
