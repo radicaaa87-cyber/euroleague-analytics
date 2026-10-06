@@ -14,10 +14,10 @@ import hashlib
 import re
 import unicodedata
 import urllib.parse
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from difflib import SequenceMatcher
-from typing import Iterable
 
 SPACE_RE = re.compile(r"\s+")
 DATE_RE = re.compile(r"(?<!\d)(\d{1,2})[._/-](\d{1,2})(?:[._/-](\d{2,4}))?(?!\d)")
@@ -92,7 +92,7 @@ def _ascii(value: str) -> str:
 def normalize_name(value: str) -> str:
     value = _ascii(value).lower().replace("-", " ")
     value = re.sub(r"[^a-z0-9.' ]+", " ", value)
-    value = value.replace("’", "'")
+    value = value.replace("\u2019", "'")
     return SPACE_RE.sub(" ", value).strip()
 
 
