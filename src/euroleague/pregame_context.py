@@ -325,6 +325,30 @@ team_context as (
       on f.season_code = t.season_code
      and f.gamecode = t.gamecode
      and f.team_code = t.team_code
+),
+collection_context as (
+    select
+        count(c.collection_id) as collection_runs,
+        coalesce(sum(c.query_count), 0) as query_count,
+        coalesce(sum(c.successful_query_count), 0) as successful_query_count,
+        coalesce(sum(c.failed_query_count), 0) as failed_query_count,
+        coalesce(sum(c.players_queried), 0) as players_queried,
+        coalesce(sum(c.items_seen), 0) as items_seen,
+        coalesce(sum(c.inserted_event_count), 0) as inserted_event_count,
+        case when count(c.collection_id) > 0 then 1 else 0 end as data_available,
+        round(
+            coalesce(sum(c.successful_query_count), 0)::numeric
+            / nullif(coalesce(sum(c.query_count), 0), 0),
+            4
+        ) as query_success_rate,
+        max(c.collected_at) as collection_feature_cutoff_time
+    from target t
+    left join pregame_context_collection c
+      on c.season_code = t.season_code
+     and c.gamecode = t.gamecode
+     and c.team_code = t.team_code
+     and c.collected_at >= t.tipoff - interval '72 hours'
+     and c.collected_at < t.tipoff
 )
 select
     t.tipoff as target_tipoff_utc,
@@ -344,6 +368,15 @@ select
     tc.team_role_down_score,
     tc.team_max_source_confidence,
     tc.team_max_severity,
+    cc.collection_runs as context_collection_runs,
+    cc.query_count as context_query_count,
+    cc.successful_query_count as context_successful_query_count,
+    cc.failed_query_count as context_failed_query_count,
+    cc.players_queried as context_players_queried,
+    cc.items_seen as context_items_seen,
+    cc.inserted_event_count as context_inserted_event_count,
+    cc.data_available as context_data_available,
+    cc.query_success_rate as context_query_success_rate,
     count(tr.player_id) as teammate_availability_signal_count,
     coalesce(
         jsonb_agg(
@@ -392,11 +425,13 @@ select
     greatest(
         sc.context_feature_cutoff_time,
         tc.team_context_feature_cutoff_time,
+        cc.collection_feature_cutoff_time,
         max(tr.event_cutoff_time)
     ) as context_feature_cutoff_time
 from target t
 cross join self_context sc
 cross join team_context tc
+cross join collection_context cc
 left join teammate_role tr on true
 group by
     t.tipoff,
@@ -418,7 +453,17 @@ group by
     tc.team_role_down_score,
     tc.team_max_source_confidence,
     tc.team_max_severity,
-    tc.team_context_feature_cutoff_time
+    tc.team_context_feature_cutoff_time,
+    cc.collection_runs,
+    cc.query_count,
+    cc.successful_query_count,
+    cc.failed_query_count,
+    cc.players_queried,
+    cc.items_seen,
+    cc.inserted_event_count,
+    cc.data_available,
+    cc.query_success_rate,
+    cc.collection_feature_cutoff_time
 """
 
 
