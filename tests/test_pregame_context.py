@@ -77,6 +77,7 @@ def test_general_article_is_not_forced_into_role_change() -> None:
 def test_role_context_sql_reenforces_the_72h_cutoff() -> None:
     from euroleague.pregame_context import ROLE_CONTEXT_SQL
 
+    assert "from season_schedule_game g" in ROLE_CONTEXT_SQL
     assert "e.published_at >= t.tipoff - interval '72 hours'" in ROLE_CONTEXT_SQL
     assert "e.published_at < t.tipoff" in ROLE_CONTEXT_SQL
     assert "limit 5" in ROLE_CONTEXT_SQL
