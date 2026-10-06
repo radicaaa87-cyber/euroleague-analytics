@@ -21,17 +21,19 @@ _OUT = (
     "won't play",
     "unavailable",
     "sidelined",
-    "injured",
-    "injury",
     "suspended",
     "descartado",
     "no jugará",
     "no jugara",
+    "sancionado",
+    "baja",
+)
+_INJURY_MENTION = (
+    "injured",
+    "injury",
     "lesionado",
     "lesión",
     "lesion",
-    "sancionado",
-    "baja",
 )
 _DOUBT = (
     "questionable",
@@ -128,6 +130,11 @@ def classify_context_text(
         event_type, direction, severity = "availability_doubt", -1, 0.60
     elif _contains_any(text, _RETURN):
         event_type, direction, severity = "return", 1, 0.70
+    elif _contains_any(text, _INJURY_MENTION):
+        # A generic injury mention is evidence of uncertainty, not proof of an
+        # absence. This also prevents phrases such as "returns after injury"
+        # from being classified as OUT.
+        event_type, direction, severity = "availability_doubt", -1, 0.45
     elif _contains_any(text, _ROLE_DOWN):
         event_type, direction, severity = "role_down", -1, 0.60
     elif _contains_any(text, _ROLE_UP):
