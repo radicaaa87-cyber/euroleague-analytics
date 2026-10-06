@@ -35,7 +35,12 @@ from train_player_points_ml import (
 
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
-from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
+from euroleague.ml_benchmark import (
+    auxiliary_candidate_specs,
+    build_model,
+    candidate_specs,
+    runtime_model_identity,
+)
 from euroleague.model_training import model_feature_columns
 from euroleague.model_validation import (
     placebo_target_audit,
@@ -518,7 +523,7 @@ def _benchmark_validation_target(
     selected_prediction: np.ndarray | None = None
     selected_mae = math.inf
 
-    for spec in candidate_specs():
+    for spec in auxiliary_candidate_specs():
         _set_progress(f"{target_name}_candidate:{spec.candidate_id}:{spec.family}:fit")
         model = build_model(spec.family, spec.params)
         model.fit(x[train_mask], y[train_mask])
@@ -574,9 +579,9 @@ def _rank_importance(
     target: np.ndarray,
     feature_names: list[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    if len(target) > 2500:
+    if len(target) > 1500:
         rng = np.random.default_rng(42)
-        indices = np.sort(rng.choice(len(target), size=2500, replace=False))
+        indices = np.sort(rng.choice(len(target), size=1500, replace=False))
         importance_x = x[indices]
         importance_y = target[indices]
     else:
@@ -588,7 +593,7 @@ def _rank_importance(
         importance_x,
         importance_y,
         scoring="neg_mean_absolute_error",
-        n_repeats=5,
+        n_repeats=3,
         random_state=42,
         n_jobs=1,
     )
@@ -644,7 +649,7 @@ def _rank_importance(
         importance_y,
         feature_names,
         provenance,
-        repeats=5,
+        repeats=3,
     )
     return ranked, source_family_importance, grouped
 
