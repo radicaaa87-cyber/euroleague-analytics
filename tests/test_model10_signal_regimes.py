@@ -243,7 +243,7 @@ def test_pattern_effect_application_preserves_row_specific_delta() -> None:
     assert np.allclose(calibrated, [8.8, 8.7])
 
 
-def test_efficiency_cycle_classifier_separates_hot_start_regression_and_cold_decline() -> None:
+def test_efficiency_cycle_classifier_uses_player_personal_hot_history() -> None:
     features = [
         "pre_last_hand_state",
         "pre_last_ts_delta_vs_prior_l10",
@@ -262,8 +262,12 @@ def test_efficiency_cycle_classifier_separates_hot_start_regression_and_cold_dec
     ]
     x = np.asarray(
         [
-            [1, 0.08, 1, 3, 5, 0.66, 0.63, 0.58, 11, 10, 9, 28, 27, 26],
-            [1, 0.12, 4, 3, 5, 0.61, 0.66, 0.58, 8, 11, 10, 24, 28, 27],
+            # Same high efficiency, but early versus this player's own hot history.
+            [1, 0.10, 2, 5, 9, 0.68, 0.65, 0.58, 12, 11, 10, 30, 29, 28],
+            # Hot streak is mature for this player, extreme vs personal L10, volume flat.
+            [1, 0.12, 4, 3, 5, 0.68, 0.66, 0.58, 10, 10, 9, 28, 28, 27],
+            # Efficiency is already cooling and role volume is falling.
+            [1, 0.09, 4, 3, 5, 0.60, 0.65, 0.58, 8, 11, 10, 24, 28, 27],
             [-1, -0.09, 0, 3, 5, 0.49, 0.52, 0.57, 7, 9, 10, 22, 25, 27],
         ],
         dtype=float,
@@ -271,15 +275,20 @@ def test_efficiency_cycle_classifier_separates_hot_start_regression_and_cold_dec
 
     labels = classify_efficiency_cycles(x=x, feature_names=features)
 
-    assert labels == ["hot_start", "hot_cooling_decline", "cold_decline"]
+    assert labels == [
+        "hot_start",
+        "hot_peak_regression",
+        "hot_cooling_decline",
+        "cold_decline",
+    ]
 
 
 def test_efficiency_cycle_effect_learning_can_make_mature_hot_a_minus_modifier() -> None:
     actual = np.asarray([8.0, 9.0, 10.0, 11.0])
     predicted = np.asarray([10.0, 10.0, 10.0, 10.0])
     labels = [
-        "hot_regression_risk",
-        "hot_regression_risk",
+        "hot_peak_regression",
+        "hot_peak_regression",
         "hot_start",
         "hot_start",
     ]
@@ -292,7 +301,7 @@ def test_efficiency_cycle_effect_learning_can_make_mature_hot_a_minus_modifier()
         prior_strength=2.0,
     )
 
-    regression = learned["hot_regression_risk"]
+    regression = learned["hot_peak_regression"]
     assert regression["mean_residual_points"] == -1.5
     assert regression["shrinkage_weight"] == 0.5
     assert regression["modifier_points"] == -0.75
