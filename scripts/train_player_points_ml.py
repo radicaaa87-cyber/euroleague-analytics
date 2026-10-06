@@ -174,8 +174,7 @@ def _apply_uncertainty(
 ) -> tuple[list[str], dict[str, np.ndarray]]:
     labels: list[str] = []
     output = {
-        key: np.zeros(len(predicted), dtype=float)
-        for key in ("p10", "p25", "p50", "p75", "p90")
+        key: np.zeros(len(predicted), dtype=float) for key in ("p10", "p25", "p50", "p75", "p90")
     }
     thresholds = calibration["thresholds"]
     for idx, (prediction, value) in enumerate(zip(predicted, volatility, strict=True)):
@@ -710,9 +709,7 @@ def main(argv: list[str] | None = None) -> int:
     role_base_metrics = _metric_summary(y[test_mask], role_base_points)
 
     volatility_index = feature_names.index("pre_l10_points_std")
-    volatility_thresholds = _volatility_thresholds(
-        x[tuning_train_mask, volatility_index]
-    )
+    volatility_thresholds = _volatility_thresholds(x[tuning_train_mask, volatility_index])
     uncertainty_calibration = _uncertainty_calibration(
         point_delta_y[validation_mask],
         point_result["validation_prediction"],
@@ -752,10 +749,7 @@ def main(argv: list[str] | None = None) -> int:
         n_jobs=1,
     )
     provenance = provenance_manifest(feature_names)
-    provenance_by_feature = {
-        item["feature"]: item
-        for item in provenance
-    }
+    provenance_by_feature = {item["feature"]: item for item in provenance}
     ranked_importance = sorted(
         (
             {
@@ -1031,10 +1025,7 @@ def main(argv: list[str] | None = None) -> int:
         + json.dumps(report["auxiliary_targets"]["derived_attempts"], sort_keys=True)
     )
     print("role_base_blind_test=" + json.dumps(report["role_base_points"], sort_keys=True))
-    print(
-        "uncertainty_blind_test="
-        + json.dumps(report["blind_test_uncertainty"], sort_keys=True)
-    )
+    print("uncertainty_blind_test=" + json.dumps(report["blind_test_uncertainty"], sort_keys=True))
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
     print(f"features={len(feature_names)}")
