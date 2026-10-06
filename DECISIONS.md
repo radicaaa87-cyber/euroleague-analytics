@@ -5424,3 +5424,32 @@ evaluation only. E2025 remains unopened.
 
 **Condition.** This is model-layer logic only. It does not alter ingestion,
 warehouse storage, snapshot construction, or source processing.
+
+
+## 95. HOT/COLD efficiency evidence includes personal 2P/3P baselines and attempt-weighted shot evidence
+
+**Decided 2026-10-07 by the owner.**
+
+**Decision.** The broad HOT/COLD gate remains anchored to the player's total shooting
+efficiency relative to his own prior-L10 baseline, but MODEL 10 now also carries
+shot-type-specific evidence for the most recent game:
+
+- 2P% versus the player's prior-L10 2P%;
+- 3P% versus the player's prior-L10 3P%;
+- 2P and 3P attempt volume;
+- an attempt-weighted standardized shot-profile residual;
+- a combined efficiency-evidence magnitude.
+
+The standardized shot-profile residual compares made 2P/3P field goals with the
+number expected from the player's own prior-L10 percentages and scales the
+difference by binomial shooting variance. Therefore the same percentage on a larger
+number of attempts supplies stronger evidence than the same percentage on only a few
+attempts.
+
+**Use.** These are pre-game features for the next game and are available to the base
+predictor, COLD-context learner, full diagnostic mart, and efficiency-cycle
+classification. They do not create a fixed point bonus or penalty. MIN and FGA role
+trends remain a separate causal context rather than part of the HOT/COLD definition.
+
+**Boundary.** This is model feature/logic only; ingestion and warehouse architecture
+are unchanged. E2024 remains validation and E2025 remains unopened.
