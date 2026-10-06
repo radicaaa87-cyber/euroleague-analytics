@@ -2257,8 +2257,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ) as pre_rotation_closing_share_trend_l3_vs_l10
         from player_hand_events phe
         left join player_season_transition pst
-          on pst.season_code = phe.season_code
-         and pst.player_id = phe.player_id
+          using (season_code, player_id)
         window
             wall as (
                 partition by player_id
