@@ -31,7 +31,6 @@ from euroleague.model_validation import (
     segment_stability_audit,
 )
 from euroleague.role_projection import role_base_projection
-
 from train_player_points_ml import (
     _as_float,
     _fetch_dataset,
