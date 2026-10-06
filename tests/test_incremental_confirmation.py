@@ -70,8 +70,8 @@ class Cursor:
     def fetchone(self):
         if self.last_query == "SELECT current_schema()":
             return (self.connection.current_schema,)
-        if self.last_query == "SELECT current_database(), inet_server_port()":
-            return (self.connection.database_name, self.connection.port)
+        if self.last_query == "SELECT current_database()":
+            return (self.connection.database_name,)
         if self.last_query == "SELECT pg_database_size(current_database())":
             return (self.connection.database_sizes.pop(0),)
         if self.last_query.startswith("SELECT count(*) FROM pg_namespace"):
@@ -96,6 +96,7 @@ class Connection:
         self.current_schema = current_schema
         self.database_name = database_name
         self.port = port
+        self.info = SimpleNamespace(host="localhost", port=port)
         self.database_sizes = list(database_sizes or [])
         self.fingerprint_answers = fingerprint_answers or {}
         self.schemas: set[str] = set()
@@ -137,7 +138,7 @@ def test_confirmation_refuses_any_target_except_local_test_database(
     with pytest.raises(ConfirmationTargetError, match="No confirmation write was attempted"):
         assert_local_confirmation_target(connection)
 
-    assert connection.executions == [("SELECT current_database(), inet_server_port()", None)]
+    assert connection.executions == [("SELECT current_database()", None)]
 
 
 def test_local_confirmation_records_sizes_above_retired_production_stop() -> None:
@@ -156,7 +157,7 @@ def test_confirmation_session_uses_utc_for_timezone_stable_content_hashes() -> N
     prepare_confirmation_session(connection)
 
     assert connection.executions == [
-        ("SELECT current_database(), inet_server_port()", None),
+        ("SELECT current_database()", None),
         ("SET TIME ZONE 'UTC'", None),
     ]
 
