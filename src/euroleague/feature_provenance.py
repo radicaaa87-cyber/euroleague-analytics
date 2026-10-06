@@ -88,6 +88,17 @@ def feature_provenance(feature: str) -> FeatureProvenance:
             ),
         )
 
+    if name.startswith("pre_transition_"):
+        return FeatureProvenance(
+            feature,
+            "season_transition_engine",
+            "EuroLeague player history + season boundary",
+            (
+                "Season Transition Engine: previous-season skill/role prior, team change "
+                "and early-season role movement versus the prior season."
+            ),
+        )
+
     if "pbp_" in name:
         return FeatureProvenance(
             feature,
