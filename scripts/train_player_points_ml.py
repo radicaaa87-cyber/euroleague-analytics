@@ -36,6 +36,7 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from euroleague.config import DatabaseSettings
+from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import (
     assert_feature_cutoffs_before_tipoff,
     assert_prefix_invariance,
@@ -101,6 +102,109 @@ def _finite_median(values: np.ndarray, fallback: float) -> float:
     if len(finite) == 0:
         return fallback
     return float(np.median(finite))
+
+
+def _residual_quantiles(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
+    residual = actual - predicted
+    quantiles = np.quantile(residual, [0.10, 0.25, 0.50, 0.75, 0.90])
+    return {
+        "p10": float(quantiles[0]),
+        "p25": float(quantiles[1]),
+        "p50": float(quantiles[2]),
+        "p75": float(quantiles[3]),
+        "p90": float(quantiles[4]),
+    }
+
+
+def _volatility_thresholds(values: np.ndarray) -> dict[str, float]:
+    finite = values[np.isfinite(values)]
+    if len(finite) < 3:
+        return {"stable_max": 3.0, "medium_max": 5.0}
+    q33, q67 = np.quantile(finite, [1.0 / 3.0, 2.0 / 3.0])
+    return {"stable_max": float(q33), "medium_max": float(q67)}
+
+
+def _volatility_band(value: float, thresholds: dict[str, float]) -> str:
+    if not np.isfinite(value):
+        return "unknown"
+    if value <= thresholds["stable_max"]:
+        return "stable"
+    if value <= thresholds["medium_max"]:
+        return "medium"
+    return "volatile"
+
+
+def _uncertainty_calibration(
+    actual: np.ndarray,
+    predicted: np.ndarray,
+    volatility: np.ndarray,
+    thresholds: dict[str, float],
+) -> dict[str, Any]:
+    global_quantiles = _residual_quantiles(actual, predicted)
+    bands: dict[str, dict[str, Any]] = {}
+    labels = np.asarray(
+        [_volatility_band(float(value), thresholds) for value in volatility],
+        dtype=object,
+    )
+    for band in ("stable", "medium", "volatile"):
+        mask = labels == band
+        count = int(np.sum(mask))
+        quantiles = (
+            _residual_quantiles(actual[mask], predicted[mask])
+            if count >= 30
+            else dict(global_quantiles)
+        )
+        bands[band] = {
+            "rows": count,
+            "used_global_fallback": count < 30,
+            "residual_quantiles": quantiles,
+        }
+    return {
+        "method": "validation residual quantiles stratified by pre_l10_points_std",
+        "thresholds": thresholds,
+        "global_residual_quantiles": global_quantiles,
+        "bands": bands,
+    }
+
+
+def _apply_uncertainty(
+    predicted: np.ndarray,
+    volatility: np.ndarray,
+    calibration: dict[str, Any],
+) -> tuple[list[str], dict[str, np.ndarray]]:
+    labels: list[str] = []
+    output = {
+        key: np.zeros(len(predicted), dtype=float)
+        for key in ("p10", "p25", "p50", "p75", "p90")
+    }
+    thresholds = calibration["thresholds"]
+    for idx, (prediction, value) in enumerate(zip(predicted, volatility, strict=True)):
+        band = _volatility_band(float(value), thresholds)
+        labels.append(band)
+        source_band = band if band in calibration["bands"] else None
+        if source_band is None:
+            quantiles = calibration["global_residual_quantiles"]
+        else:
+            quantiles = calibration["bands"][source_band]["residual_quantiles"]
+        for key in output:
+            output[key][idx] = float(prediction) + float(quantiles[key])
+    return labels, output
+
+
+def _interval_metrics(
+    actual: np.ndarray,
+    intervals: dict[str, np.ndarray],
+) -> dict[str, float]:
+    return {
+        "p25_p75_coverage": float(
+            np.mean((actual >= intervals["p25"]) & (actual <= intervals["p75"]))
+        ),
+        "p10_p90_coverage": float(
+            np.mean((actual >= intervals["p10"]) & (actual <= intervals["p90"]))
+        ),
+        "mean_p25_p75_width": float(np.mean(intervals["p75"] - intervals["p25"])),
+        "mean_p10_p90_width": float(np.mean(intervals["p90"] - intervals["p10"])),
+    }
 
 
 def _fetch_dataset(
@@ -244,6 +348,7 @@ def _benchmark_target(
     candidate_results: list[dict[str, Any]] = []
     best_by_family: dict[str, dict[str, Any]] = {}
     selected: dict[str, Any] | None = None
+    selected_validation_prediction: np.ndarray | None = None
     selected_mae = math.inf
 
     for spec in candidate_specs():
@@ -264,8 +369,13 @@ def _benchmark_target(
         if metrics["mae"] < selected_mae:
             selected_mae = metrics["mae"]
             selected = result
+            selected_validation_prediction = np.asarray(
+                validation_prediction,
+                dtype=float,
+            ).copy()
 
     assert selected is not None
+    assert selected_validation_prediction is not None
 
     leaderboard = sorted(
         (
@@ -290,6 +400,7 @@ def _benchmark_target(
         "selected": selected,
         "identity": identity,
         "model": final_model,
+        "validation_prediction": selected_validation_prediction,
         "test_prediction": test_prediction,
         "blind_test": _metric_summary(y[test_mask], test_prediction),
     }
