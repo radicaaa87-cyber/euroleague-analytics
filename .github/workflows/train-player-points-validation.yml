@@ -17,7 +17,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 120
     services:
       postgres:
         image: postgres:17
@@ -90,6 +90,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
           PGOPTIONS: "-c search_path=warehouse"
+          PYTHONUNBUFFERED: "1"
         run: |
           mkdir -p ml-output
           .venv/bin/python scripts/train_player_points_validation.py \
