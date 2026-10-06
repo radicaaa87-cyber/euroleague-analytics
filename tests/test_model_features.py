@@ -41,6 +41,7 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
                     "player_name",
                     "history_games",
                     "last_team_code",
+                    "naive_baseline_points",
                     "l10_minutes",
                     "recent_games",
                 ],
@@ -50,6 +51,7 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
                         "PUNTER, KEVIN",
                         10,
                         "BAR",
+                        16.2,
                         25.1,
                         [
                             {
@@ -152,6 +154,7 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
         "2026-10-05T00:00:00+00:00",
     )
     assert response["rows"][0]["pbp_history_games"] == 10
+    assert response["rows"][0]["naive_baseline_points"] == 16.2
     assert response["rows"][0]["acb_recent_form"]["history_games"] == 0
     assert "pair_game_stats" in cursor.statements[5]
     assert cursor.parameters[5] == (
@@ -206,6 +209,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
                     "player_id",
                     "player_name",
                     "history_games",
+                    "naive_baseline_points",
                     "l10_minutes",
                     "recent_games",
                 ],
@@ -214,6 +218,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
                         "P009862",
                         "PUNTER, KEVIN",
                         10,
+                        16.4,
                         25.1,
                         [{"team": "BAR", "opponent": "MAD", "home": False}],
                     )
@@ -458,6 +463,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert cursor.parameters[9] == ("E2026", "OLY", "2026-10-10")
     row = response["rows"][0]
     assert row["target_gamecode"] == 44
+    assert row["naive_baseline_points"] == 16.4
     assert row["opponent_team_code"] == "OLY"
     assert row["pregame_role_context"]["teammate_out_vacated_minutes_l5"] == 18.4
     assert row["pregame_role_context"]["context_max_source_confidence"] == 0.95
@@ -517,6 +523,9 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "rows between 10 preceding and 1 preceding" in sql
     assert "partition by player_id" in sql
     assert "pre_current_season_games" in sql
+    assert "pre_naive_points_mean" in sql
+    assert "avg(points::numeric) over wseason" in sql
+    assert "avg(points::numeric) over whistory" in sql
     assert "partition by tg.team_code" in sql
     assert "order by game_tipoff_utc, gamecode" in sql
     assert "order by tg.utc_date, tg.gamecode" in sql
