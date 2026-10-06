@@ -53,6 +53,21 @@ def test_return_is_positive_but_weaker_than_confirmed_out() -> None:
     assert 0 < result.role_impact_score < 0.95
 
 
+
+def test_generic_injury_mention_is_not_treated_as_confirmed_out() -> None:
+    result = classify_context_text(
+        "Player injury update before Thursday game",
+        source_name="EuroLeague Basketball",
+        publisher_url="https://www.euroleaguebasketball.net/news/example",
+    )
+
+    assert result.event_type == "availability_doubt"
+    assert result.role_direction == -1
+    assert result.severity == 0.45
+    assert result.role_impact_score == -0.4275
+
+
+
 def test_general_article_is_not_forced_into_role_change() -> None:
     result = classify_context_text("Player previews a difficult road game")
 
