@@ -152,10 +152,7 @@ def _upsert_documents(
             """,
             (json.dumps(documents, ensure_ascii=False),),
         )
-        return {
-            str(sha256): int(document_id)
-            for document_id, sha256 in cursor.fetchall()
-        }
+        return {str(sha256): int(document_id) for document_id, sha256 in cursor.fetchall()}
 
 
 def _offer_rows(
@@ -170,10 +167,7 @@ def _offer_rows(
     for offer in offers:
         document_id = document_ids.get(str(offer["document_sha256"]))
         if document_id is None:
-            raise RuntimeError(
-                "No document_id for SHA "
-                f"{offer['document_sha256']}"
-            )
+            raise RuntimeError(f"No document_id for SHA {offer['document_sha256']}")
 
         cache_key = (offer["bookmaker"], offer["participant_text"])
         identity = identity_cache.get(cache_key)
@@ -348,11 +342,7 @@ def import_batch(
     documents = list(payload.get("documents") or [])
     offers = list(payload.get("offers") or [])
     bookmaker = str(payload["bookmaker"])
-    dates = [
-        str(row["document_date"])
-        for row in documents
-        if row.get("document_date")
-    ]
+    dates = [str(row["document_date"]) for row in documents if row.get("document_date")]
 
     settings = DatabaseSettings.from_env()
     with psycopg.connect(settings.url()) as connection:
@@ -379,9 +369,7 @@ def import_batch(
         _finish_run(
             connection,
             collection_id=collection_id,
-            parsed_document_count=int(
-                payload.get("parsed_document_count") or 0
-            ),
+            parsed_document_count=int(payload.get("parsed_document_count") or 0),
             inserted_offer_count=inserted_offer_count,
             error_count=int(payload.get("error_count") or 0),
             metadata={
