@@ -9,6 +9,8 @@ from euroleague.model_signal_regimes import (
     apply_pattern_effects,
     build_signal_fingerprints,
     classify_efficiency_cycles,
+    cold_context_feature_columns,
+    cold_context_temporal_stability,
     diagnostic_feature_columns,
     filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
@@ -511,3 +513,60 @@ def test_full_diagnostic_feature_export_keeps_all_pregame_columns() -> None:
         "pre_l5_minutes",
         "pre_role2_l5_option_rank",
     ]
+
+
+def test_cold_context_uses_role_volume_and_option_context_without_fixed_effects() -> None:
+    columns = [
+        "pre_last_hand_state",
+        "pre_cold_streak_games",
+        "pre_last_ts_delta_vs_prior_l10",
+        "pre_minutes_trend_l3_vs_l10",
+        "pre_fga_trend_l3_vs_l10",
+        "pre_role2_team_fga_share_trend_l3_vs_l10",
+        "pre_role2_l5_team_scoring_opportunity_share",
+        "pre_role2_l5_option_rank",
+        "pre_role2_l5_top2_option_rate",
+        "pre_opponent_l5_def_rating",
+    ]
+
+    selected = cold_context_feature_columns(columns)
+
+    assert "pre_cold_streak_games" in selected
+    assert "pre_minutes_trend_l3_vs_l10" in selected
+    assert "pre_fga_trend_l3_vs_l10" in selected
+    assert "pre_role2_l5_option_rank" in selected
+    assert "pre_role2_l5_team_scoring_opportunity_share" in selected
+    assert "pre_opponent_l5_def_rating" not in selected
+
+
+def test_cold_context_temporal_stability_requires_improvement_in_each_evaluable_block() -> None:
+    residual = np.asarray([1.0, 2.0, -1.0, -2.0, 1.0, 2.0, -1.0, -2.0])
+    correction = np.asarray([0.8, 1.5, -0.7, -1.4, 0.7, 1.4, -0.8, -1.5])
+    blocks = [1, 1, 1, 1, 2, 2, 2, 2]
+
+    result = cold_context_temporal_stability(
+        residual=residual,
+        correction=correction,
+        temporal_blocks=blocks,
+        min_block_rows=4,
+    )
+
+    assert result["passed"] is True
+    assert result["eligible_blocks"] == 2
+    assert all(row["mae_improvement_points"] > 0 for row in result["blocks"])
+
+
+def test_cold_context_temporal_stability_rejects_one_bad_time_block() -> None:
+    residual = np.asarray([1.0, 2.0, -1.0, -2.0, 1.0, 2.0, -1.0, -2.0])
+    correction = np.asarray([0.8, 1.5, -0.7, -1.4, -1.0, -2.0, 1.0, 2.0])
+    blocks = [1, 1, 1, 1, 2, 2, 2, 2]
+
+    result = cold_context_temporal_stability(
+        residual=residual,
+        correction=correction,
+        temporal_blocks=blocks,
+        min_block_rows=4,
+    )
+
+    assert result["passed"] is False
+    assert result["blocks"][1]["mae_improvement_points"] < 0
