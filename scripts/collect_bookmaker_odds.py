@@ -9,7 +9,6 @@ import io
 import json
 import os
 import re
-import time as time_module
 import urllib.parse
 from collections.abc import Iterable
 from dataclasses import dataclass
