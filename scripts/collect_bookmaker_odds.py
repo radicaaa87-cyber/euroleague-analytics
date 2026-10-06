@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import io
 import json
 import os
 import time as time_module
 import urllib.parse
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Iterable
+from typing import Any
 
 import psycopg
 import requests
@@ -210,7 +212,7 @@ def _discover_documents(
                 )
             )
 
-        try:
+        with contextlib.suppress(requests.RequestException, ValueError):
             results.extend(
                 _discover_wayback(
                     session,
@@ -220,12 +222,10 @@ def _discover_documents(
                     max_results=max_docs * 3,
                 )
             )
-        except (requests.RequestException, ValueError):
-            pass
 
         api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
         if api_key:
-            try:
+            with contextlib.suppress(requests.RequestException, ValueError):
                 results.extend(
                     _discover_brave(
                         session,
@@ -233,8 +233,6 @@ def _discover_documents(
                         api_key=api_key,
                     )
                 )
-            except (requests.RequestException, ValueError):
-                pass
 
     for url in explicit_urls:
         normalized = _normalize_url(url)
@@ -254,11 +252,10 @@ def _discover_documents(
     for item in results:
         key = (item.bookmaker, item.canonical_url)
         current = deduped.get(key)
-        if current is None or priority[item.discovery_method] > priority[current.discovery_method]:
-            deduped[key] = item
-        elif (
-            current.archive_timestamp is None
-            and item.archive_timestamp is not None
+        if (
+            current is None
+            or priority[item.discovery_method] > priority[current.discovery_method]
+            or (current.archive_timestamp is None and item.archive_timestamp is not None)
         ):
             deduped[key] = item
 
