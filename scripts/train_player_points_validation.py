@@ -20,14 +20,6 @@ from typing import Any
 
 import numpy as np
 from sklearn.inspection import permutation_importance
-from train_player_points_ml import (
-    _as_float,
-    _fetch_dataset,
-    _finite_median,
-    _group_permutation_importance,
-    _metric_summary,
-    _season_mask,
-)
 
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
@@ -39,6 +31,14 @@ from euroleague.model_validation import (
     segment_stability_audit,
 )
 from euroleague.role_projection import role_base_projection
+from train_player_points_ml import (
+    _as_float,
+    _fetch_dataset,
+    _finite_median,
+    _group_permutation_importance,
+    _metric_summary,
+    _season_mask,
+)
 
 
 MIN_TRAIN_FEATURE_COVERAGE = 0.05
