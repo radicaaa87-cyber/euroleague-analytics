@@ -910,7 +910,23 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             sg.pbp_max_stint_seconds,
             sg.pbp_stint_seconds,
             coalesce(sg.pbp_distinct_lineups, 0) as pbp_distinct_lineups,
-            sg.pbp_primary_lineup_share
+            sg.pbp_primary_lineup_share,
+
+            pair.pre_last_top_pair_shared_minutes,
+            pair.pre_last_top_pair_net_rating,
+            pair.pre_l5_top_pair_shared_minutes,
+            pair.pre_l5_top_pair_net_rating,
+            pair.pre_l5_top_pair_repeat_rate,
+            triple.pre_last_top_triple_shared_minutes,
+            triple.pre_last_top_triple_net_rating,
+            triple.pre_l5_top_triple_shared_minutes,
+            triple.pre_l5_top_triple_net_rating,
+            triple.pre_l5_top_triple_repeat_rate,
+            five.pre_last_top_lineup_shared_minutes,
+            five.pre_last_top_lineup_net_rating,
+            five.pre_l5_top_lineup_shared_minutes,
+            five.pre_l5_top_lineup_net_rating,
+            five.pre_l5_top_lineup_repeat_rate
         from v_player_game p
         join requested_seasons rs using (season_code)
         join v_team_game tg
@@ -940,6 +956,18 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on sg.season_code = p.season_code
          and sg.gamecode = p.gamecode
          and sg.player_id = p.player_id
+        left join player_top_pair_pregame pair
+          on pair.season_code = p.season_code
+         and pair.gamecode = p.gamecode
+         and pair.player_id = p.player_id
+        left join player_top_triple_pregame triple
+          on triple.season_code = p.season_code
+         and triple.gamecode = p.gamecode
+         and triple.player_id = p.player_id
+        left join player_top_lineup_pregame five
+          on five.season_code = p.season_code
+         and five.gamecode = p.gamecode
+         and five.player_id = p.player_id
         where p.seconds_official > 0
           and not p.excluded_by_default
     ),
