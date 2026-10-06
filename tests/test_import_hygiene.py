@@ -104,6 +104,7 @@ IMPORT_ROOT_TO_REQUIREMENT: dict[str, tuple[str, str]] = {
     "requests": ("requirements.txt", "requests"),
     "psycopg": ("requirements.txt", "psycopg"),
     "numpy": ("requirements-dev.txt", "numpy"),
+    "pypdf": ("requirements.txt", "pypdf"),
     "pytest": ("requirements-dev.txt", "pytest"),
     "mcp": ("requirements-http.txt", "mcp"),
     "pydantic": ("requirements-http.txt", "pydantic"),
