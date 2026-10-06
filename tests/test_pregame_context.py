@@ -71,3 +71,7 @@ def test_role_context_sql_reenforces_the_72h_cutoff() -> None:
     assert "teammate_out_vacated_minutes_l5" in ROLE_CONTEXT_SQL
     assert "teammate_out_vacated_fga_l5" in ROLE_CONTEXT_SQL
     assert "same_position_out_vacated_minutes_l5" in ROLE_CONTEXT_SQL
+    assert "opponent_team_code" in ROLE_CONTEXT_SQL
+    assert "self_max_source_confidence" in ROLE_CONTEXT_SQL
+    assert "teammate_max_source_confidence" in ROLE_CONTEXT_SQL
+    assert "context_max_source_confidence" in ROLE_CONTEXT_SQL
