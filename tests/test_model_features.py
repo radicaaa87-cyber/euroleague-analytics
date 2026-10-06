@@ -636,6 +636,10 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_self_doubt_score" in sql
     assert "pre_teammate_out_vacated_minutes_l5" in sql
     assert "pre_teammate_out_vacated_fga_l5" in sql
+    assert "historical_context_collection" in sql
+    assert "pregame_context_collection" in sql
+    assert "pre_context_data_available" in sql
+    assert "pre_context_query_success_rate" in sql
     assert "transition_offense" not in sql
     assert "bookmaker" not in sql
     assert "central_line" not in sql
