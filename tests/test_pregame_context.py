@@ -59,3 +59,15 @@ def test_general_article_is_not_forced_into_role_change() -> None:
     assert result.event_type == "other"
     assert result.role_direction == 0
     assert result.role_impact_score == 0
+
+
+
+def test_role_context_sql_reenforces_the_72h_cutoff() -> None:
+    from euroleague.pregame_context import ROLE_CONTEXT_SQL
+
+    assert "e.published_at >= t.tipoff - interval '72 hours'" in ROLE_CONTEXT_SQL
+    assert "e.published_at < t.tipoff" in ROLE_CONTEXT_SQL
+    assert "limit 5" in ROLE_CONTEXT_SQL
+    assert "teammate_out_vacated_minutes_l5" in ROLE_CONTEXT_SQL
+    assert "teammate_out_vacated_fga_l5" in ROLE_CONTEXT_SQL
+    assert "same_position_out_vacated_minutes_l5" in ROLE_CONTEXT_SQL

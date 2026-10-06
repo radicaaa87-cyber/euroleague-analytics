@@ -198,3 +198,183 @@ def team_query(team_name: str) -> str:
         "baja OR lesionado OR duda OR rotación OR quinteto"
     )
     return f'"{team_name}" ({terms})'
+
+
+ROLE_CONTEXT_SQL = """
+with target as (
+    select
+        g.season_code,
+        g.gamecode,
+        g.utc_date as tipoff,
+        r.team_code,
+        r.position_name
+    from v_game g
+    join v_roster r
+      on r.season_code = g.season_code
+     and r.player_id = %(player_id)s
+     and r.team_code in (g.home_team_code, g.away_team_code)
+    where g.season_code = %(season_code)s
+      and g.gamecode = %(gamecode)s
+),
+self_context as (
+    select
+        coalesce(f.context_event_count, 0) as self_event_count,
+        coalesce(f.context_role_up_score, 0) as self_role_up_score,
+        coalesce(f.context_role_down_score, 0) as self_role_down_score,
+        coalesce(f.context_out_score, 0) as self_out_score,
+        coalesce(f.context_doubt_score, 0) as self_doubt_score,
+        coalesce(f.context_return_score, 0) as self_return_score,
+        f.context_feature_cutoff_time
+    from target t
+    left join v_pregame_player_context_features f
+      on f.season_code = t.season_code
+     and f.gamecode = t.gamecode
+     and f.team_code = t.team_code
+     and f.player_id = %(player_id)s
+),
+teammate_signal as (
+    select
+        e.player_id,
+        max(case
+            when e.event_type = 'availability_out'
+                then e.severity * e.source_confidence
+            else 0
+        end) as out_score,
+        max(case
+            when e.event_type = 'availability_doubt'
+                then e.severity * e.source_confidence
+            else 0
+        end) as doubt_score,
+        max(e.published_at) as event_cutoff_time
+    from target t
+    join pregame_context_event e
+      on e.season_code = t.season_code
+     and e.gamecode = t.gamecode
+     and e.team_code = t.team_code
+     and e.player_id is not null
+     and e.player_id <> %(player_id)s
+     and e.event_type in ('availability_out', 'availability_doubt')
+     and e.published_at >= t.tipoff - interval '72 hours'
+     and e.published_at < t.tipoff
+    group by e.player_id
+),
+teammate_role as (
+    select
+        s.player_id,
+        s.out_score,
+        s.doubt_score,
+        s.event_cutoff_time,
+        tr.position_name as teammate_position_name,
+        recent.avg_minutes_l5,
+        recent.avg_fga_l5
+    from teammate_signal s
+    cross join target t
+    left join v_roster tr
+      on tr.season_code = t.season_code
+     and tr.team_code = t.team_code
+     and tr.player_id = s.player_id
+    left join lateral (
+        select
+            round(avg(x.minutes), 3) as avg_minutes_l5,
+            round(avg(x.fga), 3) as avg_fga_l5
+        from (
+            select
+                pg.seconds_official::numeric / 60.0 as minutes,
+                pg.field_goals_attempted::numeric as fga
+            from v_player_game pg
+            where pg.player_id = s.player_id
+              and pg.team_code = t.team_code
+              and pg.utc_date < t.tipoff
+              and pg.seconds_official > 0
+              and not pg.excluded_by_default
+            order by pg.utc_date desc, pg.gamecode desc
+            limit 5
+        ) x
+    ) recent on true
+),
+team_context as (
+    select
+        coalesce(f.team_context_event_count, 0) as team_event_count,
+        coalesce(f.team_role_up_score, 0) as team_role_up_score,
+        coalesce(f.team_role_down_score, 0) as team_role_down_score,
+        f.team_context_feature_cutoff_time
+    from target t
+    left join v_pregame_team_context_features f
+      on f.season_code = t.season_code
+     and f.gamecode = t.gamecode
+     and f.team_code = t.team_code
+)
+select
+    sc.self_event_count,
+    sc.self_role_up_score,
+    sc.self_role_down_score,
+    sc.self_out_score,
+    sc.self_doubt_score,
+    sc.self_return_score,
+    tc.team_event_count,
+    tc.team_role_up_score,
+    tc.team_role_down_score,
+    count(tr.player_id) as teammate_availability_signal_count,
+    round(sum(coalesce(tr.avg_minutes_l5, 0) * tr.out_score), 3)
+        as teammate_out_vacated_minutes_l5,
+    round(sum(coalesce(tr.avg_minutes_l5, 0) * tr.doubt_score), 3)
+        as teammate_doubt_vacated_minutes_l5,
+    round(sum(coalesce(tr.avg_fga_l5, 0) * tr.out_score), 3)
+        as teammate_out_vacated_fga_l5,
+    round(sum(coalesce(tr.avg_fga_l5, 0) * tr.doubt_score), 3)
+        as teammate_doubt_vacated_fga_l5,
+    round(sum(
+        case
+            when tr.teammate_position_name = t.position_name
+                then coalesce(tr.avg_minutes_l5, 0) * tr.out_score
+            else 0
+        end
+    ), 3) as same_position_out_vacated_minutes_l5,
+    greatest(
+        sc.context_feature_cutoff_time,
+        tc.team_context_feature_cutoff_time,
+        max(tr.event_cutoff_time)
+    ) as context_feature_cutoff_time
+from target t
+cross join self_context sc
+cross join team_context tc
+left join teammate_role tr on true
+group by
+    t.position_name,
+    sc.self_event_count,
+    sc.self_role_up_score,
+    sc.self_role_down_score,
+    sc.self_out_score,
+    sc.self_doubt_score,
+    sc.self_return_score,
+    sc.context_feature_cutoff_time,
+    tc.team_event_count,
+    tc.team_role_up_score,
+    tc.team_role_down_score,
+    tc.team_context_feature_cutoff_time
+"""
+
+
+def load_role_context_features(
+    connection: object,
+    *,
+    season_code: str,
+    gamecode: int,
+    player_id: str,
+) -> dict[str, object]:
+    """Return forward-only role opportunity features for one upcoming player-game."""
+    cursor_factory = getattr(connection, "cursor")
+    with cursor_factory() as cursor:
+        cursor.execute(
+            ROLE_CONTEXT_SQL,
+            {
+                "season_code": season_code,
+                "gamecode": gamecode,
+                "player_id": player_id,
+            },
+        )
+        columns = [description[0] for description in cursor.description]
+        row = cursor.fetchone()
+    if row is None:
+        return {}
+    return dict(zip(columns, row, strict=True))
