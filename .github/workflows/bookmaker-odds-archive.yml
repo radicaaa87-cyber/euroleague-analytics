@@ -102,9 +102,14 @@ jobs:
           PY
 
       - name: Discover, parse and archive bookmaker player-points offers
+        env:
+          COLLECTION_FROM_DATE: ${{ steps.window.outputs.from_date }}
+          COLLECTION_TO_DATE: ${{ steps.window.outputs.to_date }}
+          COLLECTION_BOOKMAKERS: ${{ steps.window.outputs.bookmakers }}
+          COLLECTION_MAX_DOCS: ${{ steps.window.outputs.max_docs }}
         run: |
           python scripts/collect_bookmaker_odds.py \
-            --from-date "${{ steps.window.outputs.from_date }}" \
-            --to-date "${{ steps.window.outputs.to_date }}" \
-            --bookmakers "${{ steps.window.outputs.bookmakers }}" \
-            --max-docs "${{ steps.window.outputs.max_docs }}"
+            --from-date "$COLLECTION_FROM_DATE" \
+            --to-date "$COLLECTION_TO_DATE" \
+            --bookmakers "$COLLECTION_BOOKMAKERS" \
+            --max-docs "$COLLECTION_MAX_DOCS"
