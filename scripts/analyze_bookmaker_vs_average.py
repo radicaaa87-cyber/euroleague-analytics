@@ -166,9 +166,7 @@ def main() -> int:
                 candidates.append((score, game_row))
 
         candidates.sort(key=lambda item: item[0], reverse=True)
-        if not candidates or (
-            len(candidates) > 1 and candidates[0][0] == candidates[1][0]
-        ):
+        if not candidates or (len(candidates) > 1 and candidates[0][0] == candidates[1][0]):
             unmatched.append(
                 {
                     "offer_id": offer_id,
