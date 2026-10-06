@@ -11,3 +11,6 @@ requests==2.34.2
 # needed. Used with COPY for bulk loads - see DECISIONS.md item 15, including
 # why the connection must go through the pooler and not the direct host.
 psycopg[binary]==3.3.4
+
+# Text extraction from public bookmaker PDF offers.
+pypdf==6.19.0
