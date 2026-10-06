@@ -8,6 +8,7 @@ from euroleague.model_signal_regimes import (
     ablation_signal_contributions,
     build_signal_fingerprints,
     signal_domain_columns,
+    summarize_repeating_patterns,
     summarize_signal_tiers,
 )
 
@@ -123,3 +124,29 @@ def test_tier_summary_reports_directional_correction_hit_rate_not_market_hit_rat
         "Whether the model correction from the naive projection moved in the same "
         "direction as the actual result. This is not bookmaker-line betting hit rate."
     )
+
+
+def test_repeating_patterns_are_ranked_only_after_minimum_repeat_count() -> None:
+    actual = np.asarray([14.0, 13.0, 8.0, 12.0, 9.0])
+    naive = np.asarray([10.0, 10.0, 10.0, 10.0, 10.0])
+    predicted = np.asarray([12.0, 11.0, 12.0, 11.0, 9.0])
+    fingerprints = [
+        {"signal_tier": "3+", "fingerprint": "role_volume:+|rotation:+|availability:+"},
+        {"signal_tier": "3+", "fingerprint": "role_volume:+|rotation:+|availability:+"},
+        {"signal_tier": "3+", "fingerprint": "role_volume:+|rotation:+|availability:+"},
+        {"signal_tier": "2", "fingerprint": "role_volume:+|rotation:+"},
+        {"signal_tier": "1", "fingerprint": "schedule_load:-"},
+    ]
+
+    patterns = summarize_repeating_patterns(
+        actual=actual,
+        naive=naive,
+        predicted=predicted,
+        fingerprints=fingerprints,
+        min_occurrences=3,
+    )
+
+    assert len(patterns) == 1
+    assert patterns[0]["fingerprint"] == "role_volume:+|rotation:+|availability:+"
+    assert patterns[0]["occurrences"] == 3
+    assert patterns[0]["directional_correction_hit_rate"] == 2 / 3
