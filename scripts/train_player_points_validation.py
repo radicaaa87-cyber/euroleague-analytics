@@ -1075,8 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_names=feature_names,
     )
     training_efficiency_cycle_labels = [
-        all_efficiency_cycle_labels[int(position)]
-        for position in training_signal_oof["indices"]
+        all_efficiency_cycle_labels[int(position)] for position in training_signal_oof["indices"]
     ]
     learned_efficiency_cycle_effects = learn_efficiency_cycle_effects(
         actual=training_signal_oof["actual"],
