@@ -515,7 +515,7 @@ def classify_efficiency_cycles(
     """Classify pre-game hot/cold state by phase rather than treating it as one signal.
 
     The classifier uses only existing pre-game features. It distinguishes an early hot
-    run from a mature/extreme run that may regress, a visibly cooling hot run, a cold
+    run from a player-relative peak that may regress, a visibly cooling hot run, a cold
     decline with shrinking volume, and a cold recovery.
     """
     matrix = np.asarray(x, dtype=float)
@@ -619,14 +619,42 @@ def classify_efficiency_cycles(
         )
 
         if hand[row] > 0:
-            mature = hot_streak[row] >= maturity_games
-            near_personal_max = hot_streak[row] >= near_max_games
+            personal_avg_hot = (
+                avg_episode if np.isfinite(avg_episode) and avg_episode > 0 else 3.0
+            )
+            personal_max_hot = (
+                max_episode if np.isfinite(max_episode) and max_episode > 0 else 5.0
+            )
+            episode_age_ratio = hot_streak[row] / max(personal_avg_hot, 1.0)
+            max_age_ratio = hot_streak[row] / max(personal_max_hot, 1.0)
+
+            personal_efficiency_excess = max(
+                last_ts_delta[row] if np.isfinite(last_ts_delta[row]) else -np.inf,
+                ts_short_gap if np.isfinite(ts_short_gap) else -np.inf,
+            )
+            extreme_vs_personal_baseline = bool(
+                personal_efficiency_excess >= 0.08
+                and (
+                    (np.isfinite(ts_short_gap) and ts_short_gap >= 0.04)
+                    or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] >= 0.10)
+                )
+            )
+            mature_for_player = episode_age_ratio >= 1.0
+            near_personal_max = max_age_ratio >= 0.75
+            early_for_player = episode_age_ratio < 0.75 and max_age_ratio < 0.50
+
             if ts_cooling and volume_falling:
                 labels.append("hot_cooling_decline")
-            elif mature and (near_personal_max or ts_extreme) and volume_not_rising:
-                labels.append("hot_regression_risk")
-            elif not mature and (
-                (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] > 0) or ts_recovering
+            elif (
+                (mature_for_player or near_personal_max)
+                and extreme_vs_personal_baseline
+                and volume_not_rising
+            ):
+                labels.append("hot_peak_regression")
+            elif early_for_player and (
+                (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] > 0)
+                or ts_recovering
+                or ts_extreme
             ):
                 labels.append("hot_start")
             else:
