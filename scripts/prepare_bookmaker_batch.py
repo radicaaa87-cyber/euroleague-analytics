@@ -263,9 +263,7 @@ def prepare_batch(
         "input_pdf_count": len(raw),
         "unique_pdf_count": len(unique),
         "duplicate_pdf_count": len(raw) - len(unique),
-        "parsed_document_count": sum(
-            row["parse_status"] == "parsed" for row in documents
-        ),
+        "parsed_document_count": sum(row["parse_status"] == "parsed" for row in documents),
         "offer_count": len(offers),
         "error_count": len(errors),
         "documents": documents,
