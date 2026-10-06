@@ -808,6 +808,8 @@ def _write_validation_predictions(
     calibrated_predicted: np.ndarray,
     signal_fingerprints: list[dict[str, Any]],
     learned_pattern_effects: dict[str, dict[str, Any]],
+    efficiency_cycle_labels: list[str],
+    cold_streak_games: np.ndarray,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = (
@@ -837,16 +839,20 @@ def _write_validation_predictions(
                 "situation_fingerprint",
                 "supporting_domains",
                 "opposing_domains",
+                "efficiency_cycle_state",
+                "pre_cold_streak_games",
             ],
         )
         writer.writeheader()
-        for row, y_true, baseline, y_pred, calibrated_y_pred, signal_row in zip(
+        for row, y_true, baseline, y_pred, calibrated_y_pred, signal_row, cycle_label, cold_streak in zip(
             validation_rows,
             actual,
             naive,
             predicted,
             calibrated_predicted,
             signal_fingerprints,
+            efficiency_cycle_labels,
+            cold_streak_games,
             strict=True,
         ):
             learned = learned_pattern_effects.get(str(signal_row["fingerprint"]))
@@ -870,6 +876,8 @@ def _write_validation_predictions(
                     "situation_fingerprint": signal_row["fingerprint"],
                     "supporting_domains": "|".join(signal_row["supporting_domains"]),
                     "opposing_domains": "|".join(signal_row["opposing_domains"]),
+                    "efficiency_cycle_state": cycle_label,
+                    "pre_cold_streak_games": round(float(cold_streak), 4),
                 }
             )
 
@@ -1567,6 +1575,13 @@ def main(argv: list[str] | None = None) -> int:
         calibrated_validation_prediction,
         signal_fingerprints,
         learned_pattern_effects,
+        validation_efficiency_cycle_labels,
+        _feature_column(
+            x[validation_mask],
+            feature_names,
+            "pre_cold_streak_games",
+            default=0.0,
+        ),
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
