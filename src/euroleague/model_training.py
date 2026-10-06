@@ -984,6 +984,13 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             *,
             count(*) over w10 as pre_history_games,
             count(*) over wseason as pre_current_season_games,
+            round(
+                coalesce(
+                    avg(points::numeric) over wseason,
+                    avg(points::numeric) over whistory
+                ),
+                3
+            ) as pre_naive_points_mean,
 
             max(player_height_cm) over wprofile as pre_player_height_cm,
             max(player_weight_kg) over wprofile as pre_player_weight_kg,
@@ -1685,6 +1692,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l3_minutes,
         pf.pre_l5_minutes,
         pf.pre_l10_minutes,
+        pf.pre_naive_points_mean,
         pf.pre_l3_points,
         pf.pre_l5_points,
         pf.pre_l10_points,
