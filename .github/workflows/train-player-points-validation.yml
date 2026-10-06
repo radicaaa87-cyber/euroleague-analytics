@@ -86,6 +86,13 @@ jobs:
           gzip -dc .training-snapshot/warehouse.sql.gz |
             docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1
 
+      - name: Refresh restored warehouse planner statistics
+        run: |
+          POSTGRES_CONTAINER="$(docker ps --filter ancestor=postgres:17 --format '{{.ID}}' | head -n 1)"
+          test -n "$POSTGRES_CONTAINER"
+          docker exec "$POSTGRES_CONTAINER" \
+            psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1 -c "ANALYZE;"
+
       - name: Train regime-gated role model and validate on E2024
         timeout-minutes: 90
         env:
@@ -93,7 +100,6 @@ jobs:
           PGOPTIONS: "-c search_path=warehouse"
           PYTHONUNBUFFERED: "1"
         run: |
-          set -euo pipefail
           mkdir -p ml-output
           .venv/bin/python scripts/train_player_points_validation.py \
             --train-season E2023 \
@@ -106,31 +112,7 @@ jobs:
             --min-history-games 3 \
             --report ml-output/validation_report.json \
             --model ml-output/validation_candidate.pkl \
-            --predictions ml-output/e2024_validation_predictions.csv &
-          TRAIN_PID=$!
-          PREV_SIZE=-1
-          IDLE_TICKS=0
-          while kill -0 "$TRAIN_PID" 2>/dev/null; do
-            NOW="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            CPU="$(ps -p "$TRAIN_PID" -o %cpu= | tr -d ' ' || true)"
-            SIZE="$(du -sb ml-output 2>/dev/null | awk '{print $1}' || echo 0)"
-            echo "::notice::model10 training heartbeat $NOW cpu=${CPU:-0}% output_bytes=$SIZE"
-            ps -p "$TRAIN_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
-            BUSY="$(awk -v cpu="${CPU:-0}" 'BEGIN { print (cpu >= 0.5) ? 1 : 0 }')"
-            if [ "$SIZE" = "$PREV_SIZE" ] && [ "$BUSY" -eq 0 ]; then
-              IDLE_TICKS=$((IDLE_TICKS + 1))
-            else
-              IDLE_TICKS=0
-            fi
-            if [ "$IDLE_TICKS" -ge 5 ]; then
-              echo "::warning::STALL WARNING: MODEL 10 training has shown no output growth and <0.5% Python CPU for $((IDLE_TICKS * 2)) minutes."
-              ps aux --forest | head -80 || true
-              docker stats --no-stream || true
-            fi
-            PREV_SIZE="$SIZE"
-            sleep 120
-          done
-          wait "$TRAIN_PID"
+            --predictions ml-output/e2024_validation_predictions.csv
 
       - name: Assert blind season stayed closed
         run: |
