@@ -107,8 +107,7 @@ def _start_progress_watchdog() -> threading.Event:
                 dump_key = (phase, bucket)
                 if dump_key != last_dump_key:
                     print(
-                        "TRAIN_STALL_WARNING "
-                        f"phase={phase} elapsed_seconds={elapsed:.1f}",
+                        f"TRAIN_STALL_WARNING phase={phase} elapsed_seconds={elapsed:.1f}",
                         flush=True,
                     )
                     faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
@@ -130,6 +129,8 @@ def _start_progress_watchdog() -> threading.Event:
     )
     thread.start()
     return stop
+
+
 REGIME_FEATURE_CANDIDATES = (
     "pre_minutes_trend_l3_vs_l10",
     "pre_fga_trend_l3_vs_l10",
