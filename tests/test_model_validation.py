@@ -150,7 +150,4 @@ def test_segment_stability_flags_material_hidden_degradation() -> None:
     )
 
     assert audit["status"] == "warn"
-    assert any(
-        row["segment"] == "BAD"
-        for row in audit["material_degradation_segments"]
-    )
+    assert any(row["segment"] == "BAD" for row in audit["material_degradation_segments"])
