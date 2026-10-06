@@ -1,2 +1,3 @@
 run validation signal discovery
-rerun after train-empty feature filter
+rerun after bookmaker pipeline and formatter fixes
+train=E2023 validation=E2024 blind=E2025
