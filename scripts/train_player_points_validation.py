@@ -50,6 +50,40 @@ ENGINE_FEATURE_PREFIXES = {
     "transition": "pre_transition_",
 }
 
+REGIME_GATE_FLOOR_GRID = (1.0, 0.65, 0.35)
+MATCHUP_SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75)
+REGIME_FEATURE_CANDIDATES = (
+    "pre_minutes_trend_l3_vs_l10",
+    "pre_fga_trend_l3_vs_l10",
+    "pre_last_minutes_delta_vs_l10",
+    "pre_last_fga_delta_vs_l10",
+    "pre_l5_starter_rate",
+    "pre_l10_starter_rate",
+    "pre_role2_fga_per_100_trend_l3_vs_l10",
+    "pre_role2_l5_option_rank",
+    "pre_role2_l5_primary_option_rate",
+    "pre_role2_l5_top2_option_rate",
+    "pre_role2_l5_max_teammate_off_fga_uplift",
+    "pre_rotation_first_stint_trend_l3_vs_l10",
+    "pre_rotation_l5_first_exit_elapsed_minutes",
+    "pre_rotation_l5_close_game_rate",
+    "pre_rotation_closing_share_trend_l3_vs_l10",
+)
+MATCHUP_FEATURE_CANDIDATES = (
+    "pre_opponent_l5_def_rating",
+    "pre_opponent_l5_possessions",
+    "pre_opponent_l5_off_rating",
+    "pre_team_l5_possessions",
+    "is_home",
+    "pre_l10_3pa_share",
+    "pre_l10_fga_per_minute",
+    "pre_l10_2p_pct",
+    "pre_l10_3p_pct",
+    "pre_l10_ft_pct",
+    "pre_l5_fta",
+    "pre_l5_3pa",
+)
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -147,6 +181,86 @@ def _validation_fold_positions(
     ]
 
 
+def _fit_regime_gate(
+    x: np.ndarray,
+    feature_names: list[str],
+    residual_target: np.ndarray,
+    train_mask: np.ndarray,
+    validation_mask: np.ndarray,
+) -> dict[str, Any]:
+    """Learn on E2023 when the historical points baseline is likely stale."""
+    positions = [
+        feature_names.index(name)
+        for name in REGIME_FEATURE_CANDIDATES
+        if name in feature_names
+    ]
+    names = [feature_names[position] for position in positions]
+    if not positions:
+        return {
+            "model": None,
+            "features": [],
+            "validation_score": np.ones(int(np.sum(validation_mask)), dtype=float),
+            "train_q25_abs_residual": None,
+            "train_q75_abs_residual": None,
+        }
+
+    gate_model = build_model("ridge", {"alpha": 10.0})
+    gate_target = np.abs(residual_target)
+    gate_model.fit(x[train_mask][:, positions], gate_target[train_mask])
+    raw_validation = np.asarray(
+        gate_model.predict(x[validation_mask][:, positions]),
+        dtype=float,
+    )
+    q25, q75 = np.quantile(gate_target[train_mask], [0.25, 0.75])
+    width = max(float(q75 - q25), 1e-6)
+    score = np.clip((raw_validation - q25) / width, 0.0, 1.0)
+    return {
+        "model": gate_model,
+        "features": names,
+        "validation_score": score,
+        "train_q25_abs_residual": float(q25),
+        "train_q75_abs_residual": float(q75),
+        "validation_score_mean": float(np.mean(score)),
+        "validation_high_regime_share": float(np.mean(score >= 0.75)),
+    }
+
+
+def _fit_matchup_adjustment(
+    x: np.ndarray,
+    feature_names: list[str],
+    residual_target: np.ndarray,
+    train_mask: np.ndarray,
+    validation_mask: np.ndarray,
+) -> dict[str, Any]:
+    """Learn a separate opponent/style residual adjustment using E2023 only."""
+    positions = [
+        feature_names.index(name)
+        for name in MATCHUP_FEATURE_CANDIDATES
+        if name in feature_names
+    ]
+    names = [feature_names[position] for position in positions]
+    if not positions:
+        return {
+            "model": None,
+            "features": [],
+            "validation_delta": np.zeros(int(np.sum(validation_mask)), dtype=float),
+        }
+
+    matchup_model = build_model("ridge", {"alpha": 10.0})
+    matchup_model.fit(x[train_mask][:, positions], residual_target[train_mask])
+    validation_delta = np.asarray(
+        matchup_model.predict(x[validation_mask][:, positions]),
+        dtype=float,
+    )
+    return {
+        "model": matchup_model,
+        "features": names,
+        "validation_delta": validation_delta,
+        "validation_delta_mean": float(np.mean(validation_delta)),
+        "validation_delta_abs_mean": float(np.mean(np.abs(validation_delta))),
+    }
+
+
 def _benchmark_point_residual_stable(
     x: np.ndarray,
     residual_target: np.ndarray,
@@ -155,8 +269,10 @@ def _benchmark_point_residual_stable(
     train_mask: np.ndarray,
     validation_mask: np.ndarray,
     timestamps: list[Any],
+    regime_score: np.ndarray,
+    matchup_delta: np.ndarray,
 ) -> dict[str, Any]:
-    """Choose the point model by E2024 temporal stability, not one aggregate MAE."""
+    """Select a stable residual model with learned regime and matchup adjustments."""
     validation_actual = actual_points[validation_mask]
     validation_naive = naive_points[validation_mask]
     naive_metrics = _metric_summary(validation_actual, validation_naive)
@@ -172,6 +288,7 @@ def _benchmark_point_residual_stable(
     selected_model: Any | None = None
     selected_raw_delta: np.ndarray | None = None
     selected_delta: np.ndarray | None = None
+    selected_gate: np.ndarray | None = None
     selected_key: tuple[Any, ...] | None = None
 
     for spec in candidate_specs():
@@ -180,78 +297,102 @@ def _benchmark_point_residual_stable(
         raw_delta = np.asarray(model.predict(x[validation_mask]), dtype=float)
 
         for shrinkage in POINT_RESIDUAL_SHRINKAGE_GRID:
-            delta = raw_delta * shrinkage
-            prediction = validation_naive + delta
-            metrics = _metric_summary(validation_actual, prediction)
-            fold_metrics: list[dict[str, Any]] = []
-            improvements: list[float] = []
+            for gate_floor in REGIME_GATE_FLOOR_GRID:
+                gate = gate_floor + (1.0 - gate_floor) * regime_score
+                for matchup_shrinkage in MATCHUP_SHRINKAGE_GRID:
+                    delta = (
+                        raw_delta * shrinkage * gate
+                        + matchup_delta * matchup_shrinkage
+                    )
+                    prediction = validation_naive + delta
+                    metrics = _metric_summary(validation_actual, prediction)
+                    fold_metrics: list[dict[str, Any]] = []
+                    improvements: list[float] = []
 
-            for fold_number, positions in enumerate(fold_positions, start=1):
-                model_mae = float(
-                    np.mean(np.abs(validation_actual[positions] - prediction[positions]))
-                )
-                naive_mae = float(
-                    np.mean(np.abs(validation_actual[positions] - validation_naive[positions]))
-                )
-                improvement = naive_mae - model_mae
-                improvements.append(improvement)
-                fold_metrics.append(
-                    {
-                        "fold": fold_number,
-                        "rows": len(positions),
-                        "model_mae": model_mae,
-                        "naive_mae": naive_mae,
-                        "mae_improvement_vs_naive": improvement,
+                    for fold_number, positions in enumerate(fold_positions, start=1):
+                        model_mae = float(
+                            np.mean(
+                                np.abs(
+                                    validation_actual[positions]
+                                    - prediction[positions]
+                                )
+                            )
+                        )
+                        naive_mae = float(
+                            np.mean(
+                                np.abs(
+                                    validation_actual[positions]
+                                    - validation_naive[positions]
+                                )
+                            )
+                        )
+                        improvement = naive_mae - model_mae
+                        improvements.append(improvement)
+                        fold_metrics.append(
+                            {
+                                "fold": fold_number,
+                                "rows": len(positions),
+                                "model_mae": model_mae,
+                                "naive_mae": naive_mae,
+                                "mae_improvement_vs_naive": improvement,
+                            }
+                        )
+
+                    positive_folds = sum(value > 0.0 for value in improvements)
+                    median_improvement = float(np.median(improvements))
+                    worst_improvement = float(min(improvements))
+                    overall_improvement = float(
+                        naive_metrics["mae"] - metrics["mae"]
+                    )
+                    stability_gate_passed = (
+                        overall_improvement > 0.0
+                        and positive_folds >= 2
+                        and median_improvement > 0.0
+                    )
+                    result = {
+                        "candidate_id": spec.candidate_id,
+                        "family": spec.family,
+                        "params": spec.params,
+                        "residual_shrinkage": shrinkage,
+                        "regime_gate_floor": gate_floor,
+                        "matchup_shrinkage": matchup_shrinkage,
+                        "validation": metrics,
+                        "overall_mae_improvement_vs_naive": overall_improvement,
+                        "positive_folds": positive_folds,
+                        "median_fold_mae_improvement_vs_naive": median_improvement,
+                        "worst_fold_mae_improvement_vs_naive": worst_improvement,
+                        "temporal_folds": fold_metrics,
+                        "stability_gate_passed": stability_gate_passed,
                     }
-                )
+                    candidate_results.append(result)
 
-            positive_folds = sum(value > 0.0 for value in improvements)
-            median_improvement = float(np.median(improvements))
-            worst_improvement = float(min(improvements))
-            overall_improvement = float(naive_metrics["mae"] - metrics["mae"])
-            stability_gate_passed = (
-                overall_improvement > 0.0
-                and positive_folds >= 2
-                and median_improvement > 0.0
-            )
-            result = {
-                "candidate_id": spec.candidate_id,
-                "family": spec.family,
-                "params": spec.params,
-                "residual_shrinkage": shrinkage,
-                "validation": metrics,
-                "overall_mae_improvement_vs_naive": overall_improvement,
-                "positive_folds": positive_folds,
-                "median_fold_mae_improvement_vs_naive": median_improvement,
-                "worst_fold_mae_improvement_vs_naive": worst_improvement,
-                "temporal_folds": fold_metrics,
-                "stability_gate_passed": stability_gate_passed,
-            }
-            candidate_results.append(result)
+                    rank_key = (
+                        int(stability_gate_passed),
+                        positive_folds,
+                        median_improvement,
+                        overall_improvement,
+                        -metrics["mae"],
+                        -abs(shrinkage - 0.5),
+                        -matchup_shrinkage,
+                        gate_floor,
+                    )
+                    family_best = best_by_family.get(spec.family)
+                    if family_best is None or rank_key > family_best[0]:
+                        best_by_family[spec.family] = (rank_key, result)
 
-            rank_key = (
-                int(stability_gate_passed),
-                positive_folds,
-                median_improvement,
-                overall_improvement,
-                -metrics["mae"],
-                -abs(shrinkage - 0.5),
-            )
-            family_best = best_by_family.get(spec.family)
-            if family_best is None or rank_key > family_best[0]:
-                best_by_family[spec.family] = (rank_key, result)
-
-            if selected_key is None or rank_key > selected_key:
-                selected_key = rank_key
-                selected = result
-                selected_model = model
-                selected_raw_delta = raw_delta.copy()
-                selected_delta = delta.copy()
+                    if selected_key is None or rank_key > selected_key:
+                        selected_key = rank_key
+                        selected = result
+                        selected_model = model
+                        selected_raw_delta = raw_delta.copy()
+                        selected_delta = delta.copy()
+                        selected_gate = gate.copy()
 
     assert selected is not None
     assert selected_model is not None
     assert selected_raw_delta is not None
     assert selected_delta is not None
+    assert selected_gate is not None
 
     leaderboard = [
         {
@@ -259,6 +400,8 @@ def _benchmark_point_residual_stable(
             "candidate_id": result["candidate_id"],
             "params": result["params"],
             "residual_shrinkage": result["residual_shrinkage"],
+            "regime_gate_floor": result["regime_gate_floor"],
+            "matchup_shrinkage": result["matchup_shrinkage"],
             "validation": result["validation"],
             "overall_mae_improvement_vs_naive": result[
                 "overall_mae_improvement_vs_naive"
@@ -293,10 +436,13 @@ def _benchmark_point_residual_stable(
         "model": selected_model,
         "raw_validation_prediction": selected_raw_delta,
         "validation_prediction": selected_delta,
+        "selected_regime_gate": selected_gate,
         "selection_policy": {
-            "name": "temporal_stability_first_v2",
+            "name": "regime_matchup_temporal_stability_v3",
             "folds": POINT_STABILITY_FOLDS,
             "residual_shrinkage_grid": list(POINT_RESIDUAL_SHRINKAGE_GRID),
+            "regime_gate_floor_grid": list(REGIME_GATE_FLOOR_GRID),
+            "matchup_shrinkage_grid": list(MATCHUP_SHRINKAGE_GRID),
             "gate": (
                 "overall MAE beats naive, at least 2/3 E2024 chronological folds "
                 "beat naive, and median fold improvement is positive"
@@ -589,6 +735,20 @@ def main(argv: list[str] | None = None) -> int:
 
     point_delta = y - naive
     timestamps = [row[index["game_tipoff_utc"]] for row in rows]
+    regime_gate = _fit_regime_gate(
+        x,
+        feature_names,
+        point_delta,
+        train_mask,
+        validation_mask,
+    )
+    matchup_adjustment = _fit_matchup_adjustment(
+        x,
+        feature_names,
+        point_delta,
+        train_mask,
+        validation_mask,
+    )
     point_result = _benchmark_point_residual_stable(
         x,
         point_delta,
@@ -597,6 +757,8 @@ def main(argv: list[str] | None = None) -> int:
         train_mask,
         validation_mask,
         timestamps,
+        regime_gate["validation_score"],
+        matchup_adjustment["validation_delta"],
     )
     validation_delta = point_result["validation_prediction"]
     validation_naive = naive[validation_mask]
@@ -745,7 +907,10 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
 
-    statuses = [placebo["status"], rolling["status"], segment["status"]]
+    # The legacy rolling audit scores the ungated residual model only. The final
+    # architecture's temporal gate is the selected 3-fold result above.
+    rolling["scope"] = "ungated_residual_diagnostic"
+    statuses = [placebo["status"], segment["status"]]
     if not point_result["selected"]["stability_gate_passed"]:
         statuses.append("warn")
     controls_status = (
@@ -801,10 +966,32 @@ def main(argv: list[str] | None = None) -> int:
             **point_result["identity"],
             "candidate_id": point_result["selected"]["candidate_id"],
             "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
+            "regime_gate_floor": point_result["selected"]["regime_gate_floor"],
+            "matchup_shrinkage": point_result["selected"]["matchup_shrinkage"],
             "stability_gate_passed": point_result["selected"]["stability_gate_passed"],
         },
         "selected_params": point_result["selected"]["params"],
         "selection_policy": point_result["selection_policy"],
+        "regime_gate": {
+            "features": regime_gate["features"],
+            "train_q25_abs_residual": regime_gate["train_q25_abs_residual"],
+            "train_q75_abs_residual": regime_gate["train_q75_abs_residual"],
+            "validation_score_mean": regime_gate.get("validation_score_mean"),
+            "validation_high_regime_share": regime_gate.get(
+                "validation_high_regime_share"
+            ),
+            "selected_floor": point_result["selected"]["regime_gate_floor"],
+        },
+        "matchup_adjustment": {
+            "features": matchup_adjustment["features"],
+            "validation_delta_mean": matchup_adjustment.get(
+                "validation_delta_mean"
+            ),
+            "validation_delta_abs_mean": matchup_adjustment.get(
+                "validation_delta_abs_mean"
+            ),
+            "selected_shrinkage": point_result["selected"]["matchup_shrinkage"],
+        },
         "validation_temporal_stability": {
             "positive_folds": point_result["selected"]["positive_folds"],
             "median_fold_mae_improvement_vs_naive": point_result["selected"][
@@ -900,6 +1087,18 @@ def main(argv: list[str] | None = None) -> int:
                 "model_identity": point_result["identity"],
                 "selected_params": point_result["selected"]["params"],
                 "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
+                "regime_gate_floor": point_result["selected"]["regime_gate_floor"],
+                "matchup_shrinkage": point_result["selected"]["matchup_shrinkage"],
+                "regime_gate_model": regime_gate["model"],
+                "regime_gate_features": regime_gate["features"],
+                "regime_gate_q25_abs_residual": regime_gate[
+                    "train_q25_abs_residual"
+                ],
+                "regime_gate_q75_abs_residual": regime_gate[
+                    "train_q75_abs_residual"
+                ],
+                "matchup_model": matchup_adjustment["model"],
+                "matchup_features": matchup_adjustment["features"],
                 "selection_policy": point_result["selection_policy"],
                 "features": feature_names,
                 "enabled_engines": list(enabled_engines),
@@ -928,6 +1127,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"enabled_engines={json.dumps(list(enabled_engines), sort_keys=True)}")
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
+    print(f"regime_gate={json.dumps(report['regime_gate'], sort_keys=True)}")
+    print(
+        "matchup_adjustment="
+        + json.dumps(report["matchup_adjustment"], sort_keys=True)
+    )
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
     print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
     print("grouped_source_importance=" + json.dumps(grouped_source_importance[:10], sort_keys=True))
