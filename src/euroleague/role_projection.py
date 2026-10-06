@@ -56,11 +56,7 @@ def role_base_projection(
     three_pct = _clip(three_pct, 0.0, 1.0)
     ft_pct = _clip(ft_pct, 0.0, 1.0)
 
-    points = (
-        2.0 * two_pa * two_pct
-        + 3.0 * three_pa * three_pct
-        + fta * ft_pct
-    )
+    points = 2.0 * two_pa * two_pct + 3.0 * three_pa * three_pct + fta * ft_pct
     return RoleBaseProjection(
         minutes=minutes,
         fga_per_minute=fga_per_minute,
