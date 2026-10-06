@@ -7,9 +7,9 @@ directory, or ZIP archive.
 
 from __future__ import annotations
 
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-import zipfile
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,13 @@ def iter_pdf_payloads(input_path: Path) -> list[LocalPdfPayload]:
             for item in path.rglob("*")
             if item.is_file() and item.suffix.lower() == ".pdf"
         )
-        return [LocalPdfPayload(name=item.relative_to(path).as_posix(), payload=item.read_bytes()) for item in files]
+        return [
+            LocalPdfPayload(
+                name=item.relative_to(path).as_posix(),
+                payload=item.read_bytes(),
+            )
+            for item in files
+        ]
 
     if path.is_file() and path.suffix.lower() == ".pdf":
         return [LocalPdfPayload(name=path.name, payload=path.read_bytes())]
