@@ -726,19 +726,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     row_key_fields = ("season_code", "gamecode", "player_id", "feature_cutoff_time")
-    all_row_keys = [
-        tuple(row[index[field]] for field in row_key_fields)
-        for row in rows
-    ]
+    all_row_keys = [tuple(row[index[field]] for field in row_key_fields) for row in rows]
     legal_target_row_keys = [
         key
         for key, selected_row in zip(all_row_keys, final_train_mask, strict=True)
         if selected_row
     ]
     blind_row_keys = [
-        key
-        for key, selected_row in zip(all_row_keys, test_mask, strict=True)
-        if selected_row
+        key for key, selected_row in zip(all_row_keys, test_mask, strict=True) if selected_row
     ]
     split_manifest = {
         "tuning_train": [args.train_season],
