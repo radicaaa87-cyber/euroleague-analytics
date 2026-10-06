@@ -9,6 +9,7 @@ from euroleague.model_signal_regimes import (
     apply_pattern_effects,
     build_signal_fingerprints,
     classify_efficiency_cycles,
+    filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
     learn_pattern_effects,
     signal_domain_columns,
@@ -243,13 +244,131 @@ def test_pattern_effect_application_preserves_row_specific_delta() -> None:
     assert np.allclose(calibrated, [8.8, 8.7])
 
 
+
+def test_noise_filter_keeps_only_causally_confirmed_positive_signals() -> None:
+    features = [
+        "pre_l3_fga",
+        "pre_l5_fga",
+        "pre_l3_minutes",
+        "pre_l5_minutes",
+    ]
+    x = np.asarray(
+        [
+            [10.0, 10.0, 28.0, 28.0],
+            [12.0, 10.0, 31.0, 28.0],
+            [8.0, 10.0, 24.0, 28.0],
+        ],
+        dtype=float,
+    )
+    contributions = {
+        "role_volume": np.asarray([0.7, 0.7, -0.7]),
+        "rotation": np.asarray([0.5, 0.5, -0.5]),
+        "pace_environment": np.asarray([0.4, 0.4, -0.4]),
+        "schedule_load": np.asarray([0.6, 0.6, -0.6]),
+        "efficiency_state": np.asarray([0.8, 0.8, -0.8]),
+    }
+
+    filtered = filter_noisy_signal_contributions(
+        contributions=contributions,
+        x=x,
+        feature_names=features,
+        efficiency_labels=["hot_start", "cold_regression_up", "hot_peak_regression"],
+    )
+
+    # Weak/generic positive signals are neutralized.
+    assert filtered["role_volume"][0] == 0.0
+    assert filtered["rotation"][0] == 0.0
+    assert filtered["pace_environment"][0] == 0.0
+    assert filtered["schedule_load"][0] == 0.0
+    assert filtered["efficiency_state"][0] == 0.0
+
+    # Positive role/rotation need real rising volume; efficiency+ needs cold regression up.
+    assert filtered["role_volume"][1] == 0.7
+    assert filtered["rotation"][1] == 0.5
+    assert filtered["pace_environment"][1] == 0.0
+    assert filtered["schedule_load"][1] == 0.0
+    assert filtered["efficiency_state"][1] == 0.8
+
+    # Negative role/load survive; efficiency- survives only for a valid regression/decline state.
+    assert filtered["role_volume"][2] == -0.7
+    assert filtered["rotation"][2] == -0.5
+    assert filtered["pace_environment"][2] == -0.4
+    assert filtered["schedule_load"][2] == -0.6
+    assert filtered["efficiency_state"][2] == -0.8
+
+
+def test_cold_regression_up_uses_personal_episode_age_and_preserved_volume() -> None:
+    features = [
+        "pre_last_hand_state",
+        "pre_last_ts_delta_vs_prior_l10",
+        "pre_cold_streak_games",
+        "pre_avg_cold_episode_games",
+        "pre_max_cold_episode_games",
+        "pre_l3_ts_proxy",
+        "pre_l5_ts_proxy",
+        "pre_l10_ts_proxy",
+        "pre_l3_fga",
+        "pre_l5_fga",
+        "pre_l10_fga",
+        "pre_l3_minutes",
+        "pre_l5_minutes",
+        "pre_l10_minutes",
+    ]
+    x = np.asarray(
+        [
+            # Long/extreme cold run, but opportunity is still expanding.
+            [-1, -0.11, 4, 3, 5, 0.47, 0.50, 0.57, 12, 10, 10, 31, 28, 28],
+            # Same cold shooting, but role is shrinking: this is decline, not rebound.
+            [-1, -0.11, 4, 3, 5, 0.47, 0.50, 0.57, 8, 10, 10, 24, 28, 28],
+            # Too early relative to this player's own cold-history duration.
+            [-1, -0.11, 1, 4, 7, 0.47, 0.50, 0.57, 12, 10, 10, 31, 28, 28],
+        ],
+        dtype=float,
+    )
+
+    labels = classify_efficiency_cycles(x=x, feature_names=features)
+
+    assert labels == [
+        "cold_regression_up",
+        "cold_decline",
+        "cold_efficiency_only",
+    ]
+
+
+def test_efficiency_modifier_applies_only_expected_regression_directions() -> None:
+    predicted = np.asarray([10.0, 10.0, 10.0, 10.0])
+    labels = [
+        "hot_start",
+        "hot_peak_regression",
+        "cold_regression_up",
+        "cold_decline",
+    ]
+    learned = {
+        "hot_start": {"modifier_points": 0.8},
+        "hot_peak_regression": {"modifier_points": -0.5},
+        "cold_regression_up": {"modifier_points": 0.7},
+        # Wrong sign: a cold decline must never be converted into a PLUS modifier.
+        "cold_decline": {"modifier_points": 0.6},
+    }
+
+    adjusted = apply_efficiency_cycle_effects(
+        predicted=predicted,
+        labels=labels,
+        learned_effects=learned,
+    )
+
+    assert np.allclose(adjusted, [10.0, 9.5, 10.7, 10.0])
+
 def test_efficiency_cycle_classifier_uses_player_personal_hot_history() -> None:
     features = [
         "pre_last_hand_state",
         "pre_last_ts_delta_vs_prior_l10",
         "pre_hot_streak_games",
+        "pre_cold_streak_games",
         "pre_avg_hot_episode_games",
+        "pre_avg_cold_episode_games",
         "pre_max_hot_episode_games",
+        "pre_max_cold_episode_games",
         "pre_l3_ts_proxy",
         "pre_l5_ts_proxy",
         "pre_l10_ts_proxy",
@@ -263,12 +382,12 @@ def test_efficiency_cycle_classifier_uses_player_personal_hot_history() -> None:
     x = np.asarray(
         [
             # Same high efficiency, but early versus this player's own hot history.
-            [1, 0.10, 2, 5, 9, 0.68, 0.65, 0.58, 12, 11, 10, 30, 29, 28],
+            [1, 0.10, 2, 0, 5, 0, 9, 0, 0.68, 0.65, 0.58, 12, 11, 10, 30, 29, 28],
             # Hot streak is mature for this player, extreme vs personal L10, volume flat.
-            [1, 0.12, 4, 3, 5, 0.68, 0.66, 0.58, 10, 10, 9, 28, 28, 27],
+            [1, 0.12, 4, 0, 3, 0, 5, 0, 0.68, 0.66, 0.58, 10, 10, 9, 28, 28, 27],
             # Efficiency is already cooling and role volume is falling.
-            [1, 0.09, 4, 3, 5, 0.60, 0.65, 0.58, 8, 11, 10, 24, 28, 27],
-            [-1, -0.09, 0, 3, 5, 0.49, 0.52, 0.57, 7, 9, 10, 22, 25, 27],
+            [1, 0.09, 4, 0, 3, 0, 5, 0, 0.60, 0.65, 0.58, 8, 11, 10, 24, 28, 27],
+            [-1, -0.09, 0, 2, 0, 3, 0, 5, 0.49, 0.52, 0.57, 7, 9, 10, 22, 25, 27],
         ],
         dtype=float,
     )
