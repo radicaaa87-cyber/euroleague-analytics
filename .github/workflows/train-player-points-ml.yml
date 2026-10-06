@@ -72,6 +72,11 @@ jobs:
           --replace
           --cache-dir .training-cache
           --output ml-output/local_warehouse.json
+      - name: Copy compact ACB, identity and pregame context
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+        run: .venv/bin/python scripts/copy_training_context.py
       - name: Benchmark four model families and blind-test the validation winner
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
