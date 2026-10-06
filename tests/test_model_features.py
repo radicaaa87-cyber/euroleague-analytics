@@ -241,6 +241,14 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_team_l5_off_rating" in sql
     assert "pre_opponent_l5_def_rating" in sql
     assert "pre_days_rest" in sql
+    assert "pre_hours_rest" in sql
+    assert "pre_last_was_away" in sql
+    assert "pre_l5_away_rate" in sql
+    assert "pre_away_games_last_3" in sql
+    assert "pre_away_games_last_7d" in sql
+    assert "pre_away_games_last_14d" in sql
+    assert "pre_l5_home_away_switch_rate" in sql
+    assert "home_away_switch_event" in sql
     assert "pre_games_last_7d" in sql
     assert "pre_games_last_14d" in sql
     assert "pre_minutes_last_7d" in sql
