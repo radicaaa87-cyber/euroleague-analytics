@@ -32,8 +32,7 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.perf_counter()
     print(
-        "BOOKMAKER_PIPELINE_START "
-        f"bookmaker={args.bookmaker} input={args.input}",
+        f"BOOKMAKER_PIPELINE_START bookmaker={args.bookmaker} input={args.input}",
         flush=True,
     )
 
@@ -89,8 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("BOOKMAKER_IMPORT_SUMMARY=" + json.dumps(result, sort_keys=True), flush=True)
     print(
-        "BOOKMAKER_PIPELINE_COMPLETE "
-        f"mode=import elapsed_seconds={result['total_seconds']}",
+        f"BOOKMAKER_PIPELINE_COMPLETE mode=import elapsed_seconds={result['total_seconds']}",
         flush=True,
     )
     return 0
