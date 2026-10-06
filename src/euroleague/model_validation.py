@@ -160,7 +160,9 @@ def write_preblind_lock(
 
 
 def _mae(actual: np.ndarray, predicted: np.ndarray) -> float:
-    return float(np.mean(np.abs(np.asarray(actual, dtype=float) - np.asarray(predicted, dtype=float))))
+    actual_array = np.asarray(actual, dtype=float)
+    predicted_array = np.asarray(predicted, dtype=float)
+    return float(np.mean(np.abs(actual_array - predicted_array)))
 
 
 def placebo_target_audit(
@@ -210,7 +212,7 @@ def placebo_target_audit(
     return {
         "status": status,
         "seed": seed,
-        "rows": int(len(actual)),
+        "rows": len(actual),
         "real_residual_mae": real_mae,
         "placebo_residual_mae": placebo_mae,
         "zero_delta_residual_mae": zero_delta_mae,
@@ -277,8 +279,8 @@ def rolling_time_audit(
         folds.append(
             {
                 "fold": fold_number,
-                "train_rows": int(len(train_indices)),
-                "eval_rows": int(len(eval_indices)),
+                "train_rows": len(train_indices),
+                "eval_rows": len(eval_indices),
                 "eval_start": _normalise(start),
                 "eval_end": _normalise(end),
                 "model_mae": model_mae,
