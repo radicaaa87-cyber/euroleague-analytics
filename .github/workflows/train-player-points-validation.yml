@@ -3,7 +3,7 @@ name: Validate player-points ML signals
 on:
   workflow_dispatch:
   push:
-    branches: [feat/acb-ingestion]
+    branches: [feat/acb-ingestion, feat/player-points-model10-situation-signals]
     paths:
       - .github/ml-validation.request
 
