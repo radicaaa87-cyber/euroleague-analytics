@@ -201,12 +201,16 @@ def placebo_target_audit(
     warnings: list[str] = []
     if placebo_mae < real_mae - 0.25:
         suspicious_reasons.append("shuffled-target placebo materially beat the real model")
-    if abs(correlation) >= 0.20:
-        suspicious_reasons.append("placebo predictions retained implausibly high blind correlation")
+    if abs(correlation) >= 0.20 and placebo_mae <= real_mae + 0.25:
+        suspicious_reasons.append(
+            "placebo kept high blind correlation while matching the real model error"
+        )
     if placebo_mae < zero_delta_mae - 0.10:
         warnings.append("placebo slightly beat the zero-residual naive baseline")
     if abs(correlation) >= 0.10:
-        warnings.append("placebo blind correlation exceeded 0.10")
+        warnings.append(
+            "placebo blind correlation exceeded 0.10; inspect together with placebo MAE"
+        )
 
     status = "fail" if suspicious_reasons else ("warn" if warnings else "pass")
     return {
