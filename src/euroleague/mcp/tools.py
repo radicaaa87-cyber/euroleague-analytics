@@ -383,7 +383,10 @@ def build_registry(
                 "play-by-play calls. Returns one compact server-side bundle with L3/L5/L10 "
                 "minutes, points, FGA, 3PA and FTA, starter rates, per-minute rates, recent "
                 "game rows, plus full-PBP-derived on-court possessions, ratings, stint and "
-                "lineup-concentration signals, and optional opponent L5 profile. Supply "
+                "lineup-concentration signals, and optional opponent L5 profile. For an "
+                "upcoming game, supply gamecode to add leakage-safe 72h injury/availability "
+                "context, source-confidence weighting, and teammate vacated minutes/FGA; the "
+                "opponent is inferred from that target game unless explicitly overridden. Supply "
                 "as_of_date for backtests: every rolling number then "
                 "uses only games strictly before that date, preventing look-ahead leakage. "
                 "Raw play-by-play remains available through el_get_play_by_play for drill-down "
@@ -400,7 +403,18 @@ def build_registry(
                         "type": "string",
                         "description": (
                             "Optional upcoming opponent by team code or club name. When given, "
-                            "the same response adds the opponent's previous-five-game profile."
+                            "the same response adds the opponent's previous-five-game profile. "
+                            "When gamecode is supplied, the target game's opponent is inferred "
+                            "automatically unless this value overrides it."
+                        ),
+                    },
+                    "gamecode": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": (
+                            "Optional target EuroLeague gamecode. Adds the archived 72-hour "
+                            "pregame role context for this player, including OUT/DOUBT/RETURN "
+                            "signals and confidence-weighted teammate vacated minutes/FGA."
                         ),
                     },
                     "as_of_date": {
