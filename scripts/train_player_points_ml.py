@@ -906,6 +906,7 @@ def main(argv: list[str] | None = None) -> int:
         "blind_test_uncertainty": uncertainty_metrics,
         "permutation_importance": ranked_importance,
         "source_family_importance": source_family_importance,
+        "grouped_source_permutation_importance": grouped_source_importance,
         "notes": [
             "All four model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
@@ -930,6 +931,9 @@ def main(argv: list[str] | None = None) -> int:
             "volatile scorers do not automatically receive the same interval.",
             "Feature provenance is stored with the artifact so importance can be read "
             "by source family rather than as anonymous numeric columns.",
+            "Grouped source permutation importance shuffles every feature in one source family "
+            "together on the already-scored blind sample; it is diagnostic only and never "
+            "changes model selection.",
             "Bookmaker lines are excluded; betting EDGE is evaluated later by "
             "joining locked predictions.",
         ],
@@ -962,6 +966,7 @@ def main(argv: list[str] | None = None) -> int:
                 "features": feature_names,
                 "feature_provenance": provenance,
                 "uncertainty_calibration": uncertainty_calibration,
+                "grouped_source_permutation_importance": grouped_source_importance,
                 "selected_params": selected["params"],
                 "minutes_selected_model": minutes_result["identity"],
                 "minutes_selected_params": minutes_result["selected"]["params"],
