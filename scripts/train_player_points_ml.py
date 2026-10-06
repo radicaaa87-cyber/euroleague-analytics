@@ -672,6 +672,26 @@ def main(argv: list[str] | None = None) -> int:
     role_base_points = np.asarray([row.points for row in role_base_rows], dtype=float)
     role_base_metrics = _metric_summary(y[test_mask], role_base_points)
 
+    volatility_index = feature_names.index("pre_l10_points_std")
+    volatility_thresholds = _volatility_thresholds(
+        x[tuning_train_mask, volatility_index]
+    )
+    uncertainty_calibration = _uncertainty_calibration(
+        point_delta_y[validation_mask],
+        point_result["validation_prediction"],
+        x[validation_mask, volatility_index],
+        volatility_thresholds,
+    )
+    uncertainty_band, uncertainty_intervals = _apply_uncertainty(
+        test_prediction,
+        x[test_mask, volatility_index],
+        uncertainty_calibration,
+    )
+    uncertainty_metrics = _interval_metrics(
+        y[test_mask],
+        uncertainty_intervals,
+    )
+
     # The blind test has already been scored at this point. Permutation
     # importance is diagnostic only and cannot change family or parameter selection.
     test_x = x[test_mask]
@@ -694,10 +714,17 @@ def main(argv: list[str] | None = None) -> int:
         random_state=42,
         n_jobs=1,
     )
+    provenance = provenance_manifest(feature_names)
+    provenance_by_feature = {
+        item["feature"]: item
+        for item in provenance
+    }
     ranked_importance = sorted(
         (
             {
                 "feature": feature,
+                "source_family": provenance_by_feature[feature]["source_family"],
+                "source_surface": provenance_by_feature[feature]["source_surface"],
                 "importance_mean": float(mean),
                 "importance_std": float(std),
             }
@@ -709,6 +736,29 @@ def main(argv: list[str] | None = None) -> int:
             )
         ),
         key=lambda item: item["importance_mean"],
+        reverse=True,
+    )
+    family_totals: dict[str, dict[str, Any]] = {}
+    for item in ranked_importance:
+        family = item["source_family"]
+        bucket = family_totals.setdefault(
+            family,
+            {
+                "source_family": family,
+                "feature_count": 0,
+                "importance_sum": 0.0,
+                "positive_importance_sum": 0.0,
+                "top_features": [],
+            },
+        )
+        bucket["feature_count"] += 1
+        bucket["importance_sum"] += item["importance_mean"]
+        bucket["positive_importance_sum"] += max(item["importance_mean"], 0.0)
+        if len(bucket["top_features"]) < 5:
+            bucket["top_features"].append(item["feature"])
+    source_family_importance = sorted(
+        family_totals.values(),
+        key=lambda item: item["positive_importance_sum"],
         reverse=True,
     )
 
@@ -731,6 +781,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "feature_count": len(feature_names),
         "features": feature_names,
+        "feature_provenance": provenance,
         "leakage_audit": leakage_audit,
         "candidate_results": candidate_results,
         "validation_leaderboard": validation_leaderboard,
@@ -806,7 +857,10 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "mae_improvement_vs_naive": float(naive_baseline_metrics["mae"] - test_metrics["mae"]),
         "mae_improvement_vs_l10": float(l10_baseline_metrics["mae"] - test_metrics["mae"]),
+        "uncertainty_calibration": uncertainty_calibration,
+        "blind_test_uncertainty": uncertainty_metrics,
         "permutation_importance": ranked_importance,
+        "source_family_importance": source_family_importance,
         "notes": [
             "All four model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
@@ -825,6 +879,12 @@ def main(argv: list[str] | None = None) -> int:
             "Role-volatility features separate recurring variance from one-game contextual shocks.",
             "A temporal leakage gate requires every feature cutoff to precede tipoff.",
             "Adding E2025 must leave every E2023/E2024 model feature byte-for-byte equal.",
+            "Prediction ranges are calibrated only from validation residuals; "
+            "the blind-test outcomes never set P10/P25/P50/P75/P90 interval widths.",
+            "Uncertainty is stratified by leakage-safe pre_l10_points_std so stable and "
+            "volatile scorers do not automatically receive the same interval.",
+            "Feature provenance is stored with the artifact so importance can be read "
+            "by source family rather than as anonymous numeric columns.",
             "Bookmaker lines are excluded; betting EDGE is evaluated later by "
             "joining locked predictions.",
         ],
@@ -855,6 +915,8 @@ def main(argv: list[str] | None = None) -> int:
                 "model_family": selected["family"],
                 "model_identity": selected_identity,
                 "features": feature_names,
+                "feature_provenance": provenance,
+                "uncertainty_calibration": uncertainty_calibration,
                 "selected_params": selected["params"],
                 "minutes_selected_model": minutes_result["identity"],
                 "minutes_selected_params": minutes_result["selected"]["params"],
@@ -903,6 +965,8 @@ def main(argv: list[str] | None = None) -> int:
         fta_y[test_mask],
         predicted_fta,
         role_base_points,
+        uncertainty_band,
+        uncertainty_intervals,
     )
 
     print(json.dumps(report["rows"], sort_keys=True))
@@ -917,6 +981,10 @@ def main(argv: list[str] | None = None) -> int:
         + json.dumps(report["auxiliary_targets"]["derived_attempts"], sort_keys=True)
     )
     print("role_base_blind_test=" + json.dumps(report["role_base_points"], sort_keys=True))
+    print(
+        "uncertainty_blind_test="
+        + json.dumps(report["blind_test_uncertainty"], sort_keys=True)
+    )
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
     print(f"features={len(feature_names)}")
