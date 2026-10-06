@@ -76,10 +76,7 @@ def main() -> int:
             order by source, source_player_id
             """,
         )
-        identities = [
-            (*row[:9], Jsonb(row[9]), *row[10:])
-            for row in identities_raw
-        ]
+        identities = [(*row[:9], Jsonb(row[9]), *row[10:]) for row in identities_raw]
         identity_count = _executemany(
             target,
             """
@@ -109,8 +106,7 @@ def main() -> int:
             """,
         )
         acb_games = [
-            (*row[:12], Jsonb(row[12]) if row[12] is not None else None)
-            for row in acb_games_raw
+            (*row[:12], Jsonb(row[12]) if row[12] is not None else None) for row in acb_games_raw
         ]
         acb_game_count = _executemany(
             target,
@@ -143,10 +139,7 @@ def main() -> int:
             order by match_id, source_player_id
             """,
         )
-        acb_players = [
-            (*row[:24], Jsonb(row[24]))
-            for row in acb_players_raw
-        ]
+        acb_players = [(*row[:24], Jsonb(row[24])) for row in acb_players_raw]
         acb_player_count = _executemany(
             target,
             """
@@ -181,10 +174,7 @@ def main() -> int:
             order by season_code, gamecode, team_code, published_at, source_url
             """,
         )
-        context_rows = [
-            (*row[:17], Jsonb(row[17]))
-            for row in context_raw
-        ]
+        context_rows = [(*row[:17], Jsonb(row[17])) for row in context_raw]
         context_count = _executemany(
             target,
             """
