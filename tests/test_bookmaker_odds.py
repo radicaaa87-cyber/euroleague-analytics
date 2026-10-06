@@ -221,3 +221,19 @@ def test_mozzart_multiword_surname_resolves_surname_first_el_identity() -> None:
     assert match.player_name_raw == "Y.DOS SANTOS"
     assert match.team_name_raw == "Crv"
     assert match.confidence == 1.0
+
+
+def test_ambiguous_exact_bookmaker_abbreviation_is_not_auto_matched() -> None:
+    candidates = [
+        AthleteCandidate("a1", "JONES, CARLIK"),
+        AthleteCandidate("a2", "JONES, CAMERON"),
+    ]
+
+    match = resolve_participant(
+        "C.JONES Par",
+        candidates,
+        bookmaker="mozzart",
+    )
+
+    assert match.athlete_id is None
+    assert match.confidence is None
