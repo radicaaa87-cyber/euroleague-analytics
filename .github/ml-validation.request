@@ -1,3 +1,4 @@
 run validation signal discovery
 rerun after bookmaker pipeline and formatter fixes
 train=E2023 validation=E2024 blind=E2025
+retry after verified warehouse snapshot rebuild
