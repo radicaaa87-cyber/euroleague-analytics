@@ -85,6 +85,26 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
             ),
             (
                 [
+                    "teammate_a_id",
+                    "teammate_b_id",
+                    "games_together",
+                    "shared_minutes",
+                    "scoring_association",
+                ],
+                [],
+            ),
+            (
+                [
+                    "lineup_id",
+                    "players",
+                    "games",
+                    "shared_minutes",
+                    "lineup_association",
+                ],
+                [],
+            ),
+            (
+                [
                     "games_included",
                     "total_games",
                     "first_game",
@@ -145,7 +165,32 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
         "P009862",
         12,
     )
+    assert "triple_game_stats" in cursor.statements[6]
+    assert cursor.parameters[6] == (
+        "2026-10-05T00:00:00+00:00",
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        "P009862",
+        10,
+    )
+    assert "target_lineups" in cursor.statements[7]
+    assert cursor.parameters[7] == (
+        "2026-10-05T00:00:00+00:00",
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        6,
+    )
     assert response["rows"][0]["teammate_pair_context"] == []
+    assert response["rows"][0]["teammate_triple_context"] == []
+    assert response["rows"][0]["key_lineup_context"] == []
     assert response["minutes_basis"]["value"] == "official"
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
@@ -270,6 +315,66 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
             ),
             (
                 [
+                    "teammate_a_id",
+                    "teammate_a_name",
+                    "teammate_b_id",
+                    "teammate_b_name",
+                    "games_together",
+                    "games_without_combo",
+                    "shared_minutes",
+                    "target_points_per_minute_delta",
+                    "target_fga_per_minute_delta",
+                    "shared_net_rating",
+                    "scoring_association",
+                ],
+                [
+                    (
+                        "PTEAM1",
+                        "TEAMMATE, ONE",
+                        "PTEAM2",
+                        "TEAMMATE, TWO",
+                        6,
+                        4,
+                        91.0,
+                        0.062,
+                        0.021,
+                        7.4,
+                        "positive",
+                    )
+                ],
+            ),
+            (
+                [
+                    "lineup_id",
+                    "team_code",
+                    "players",
+                    "games",
+                    "shared_minutes",
+                    "team_possessions",
+                    "net_rating",
+                    "lineup_association",
+                ],
+                [
+                    (
+                        "LINEUP1",
+                        "BAR",
+                        [
+                            {"player_id": "P009862", "player_name": "PUNTER, KEVIN"},
+                            {"player_id": "PTEAM1", "player_name": "TEAMMATE, ONE"},
+                            {"player_id": "PTEAM2", "player_name": "TEAMMATE, TWO"},
+                            {"player_id": "PTEAM3", "player_name": "TEAMMATE, THREE"},
+                            {"player_id": "PTEAM4", "player_name": "TEAMMATE, FOUR"},
+                        ],
+                        5,
+                        72.0,
+                        58,
+                        8.1,
+                        "positive",
+                    )
+                ],
+            ),
+            (
+                [
                     "opponent_l5_games",
                     "opponent_l5_off_rating",
                     "opponent_l5_def_rating",
@@ -327,7 +432,30 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
         "P009862",
         12,
     )
-    assert cursor.parameters[7] == ("E2026", "OLY", "2026-10-10")
+    assert "triple_game_stats" in cursor.statements[7]
+    assert cursor.parameters[7] == (
+        dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        "P009862",
+        10,
+    )
+    assert "target_lineups" in cursor.statements[8]
+    assert cursor.parameters[8] == (
+        dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        6,
+    )
+    assert cursor.parameters[9] == ("E2026", "OLY", "2026-10-10")
     row = response["rows"][0]
     assert row["target_gamecode"] == 44
     assert row["opponent_team_code"] == "OLY"
@@ -343,6 +471,13 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert row["teammate_pair_context"][0]["scoring_association"] == "positive"
     assert row["teammate_pair_context"][0]["shared_net_rating"] == 6.7
     assert row["teammate_pair_context"][0]["pregame_availability"]["out_score"] == 0.95
+    assert row["teammate_triple_context"][0]["scoring_association"] == "positive"
+    assert row["teammate_triple_context"][0]["pregame_availability"][0]["player_id"] == "PTEAM1"
+    assert row["key_lineup_context"][0]["lineup_association"] == "positive"
+    assert (
+        row["key_lineup_context"][0]["pregame_unavailable_players"][0]["player_id"]
+        == "PTEAM1"
+    )
 
 
 def test_model_context_rejects_nonpositive_gamecode() -> None:
