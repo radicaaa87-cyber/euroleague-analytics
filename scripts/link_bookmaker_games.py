@@ -42,7 +42,6 @@ def _load_historical_candidates(
              and asi.source_player_id = box.player_id
             where g.season_code in ('E2023', 'E2024', 'E2025')
               and g.played
-            order by g.local_date::date, g.season_code, g.gamecode, asi.athlete_id
             """
         )
         return [
