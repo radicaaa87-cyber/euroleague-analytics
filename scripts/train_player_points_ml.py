@@ -667,12 +667,8 @@ def main(argv: list[str] | None = None) -> int:
         "mae_improvement_role_base_vs_naive": float(
             naive_baseline_metrics["mae"] - role_base_metrics["mae"]
         ),
-        "mae_improvement_vs_naive": float(
-            naive_baseline_metrics["mae"] - test_metrics["mae"]
-        ),
-        "mae_improvement_vs_l10": float(
-            l10_baseline_metrics["mae"] - test_metrics["mae"]
-        ),
+        "mae_improvement_vs_naive": float(naive_baseline_metrics["mae"] - test_metrics["mae"]),
+        "mae_improvement_vs_l10": float(l10_baseline_metrics["mae"] - test_metrics["mae"]),
         "permutation_importance": ranked_importance,
         "notes": [
             "All four model families use the identical feature matrix and chronological split.",
