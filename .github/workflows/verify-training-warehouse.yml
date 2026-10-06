@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/acb-ingestion
+      - feat/player-points-model10-situation-signals
     paths:
       - ".github/backfill/verify-training-warehouse.trigger"
 
