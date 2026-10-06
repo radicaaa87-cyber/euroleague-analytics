@@ -81,6 +81,18 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         params.append(as_of_date)
     where = " and ".join(conditions)
 
+    baseline_conditions = [
+        "p.player_id = %s",
+        "p.seconds_official > 0",
+    ]
+    baseline_params: list[Any] = [player_id]
+    if not include_quarantined:
+        baseline_conditions.append("not p.excluded_by_default")
+    if as_of_date is not None:
+        baseline_conditions.append("p.utc_date::date < %s")
+        baseline_params.append(as_of_date)
+    baseline_where = " and ".join(baseline_conditions)
+
     cursor.execute(
         f"""
         with recent as (
@@ -103,7 +115,6 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                 p.free_throws_attempted,
                 p.{seconds_column} as seconds_played,
                 p.team_possessions,
-                round(avg(p.points::numeric) over (), 3) as naive_baseline_points,
                 row_number() over (
                     order by p.utc_date desc, p.gamecode desc
                 ) as rn
@@ -116,12 +127,27 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             order by p.utc_date desc, p.gamecode desc
             limit %s
         ),
+        naive_baseline as (
+            select
+                round(
+                    coalesce(
+                        avg(p.points::numeric) filter (
+                            where p.season_code = %s
+                        ),
+                        avg(p.points::numeric)
+                    ),
+                    3
+                ) as naive_baseline_points
+            from v_player_game p
+            where {baseline_where}
+        ),
         stats as (
             select
                 max(player_id) as player_id,
                 max(player_name) as player_name,
                 max(team_code) filter (where rn = 1) as last_team_code,
-                max(naive_baseline_points) as naive_baseline_points,
+                (select naive_baseline_points from naive_baseline)
+                    as naive_baseline_points,
                 count(*) as history_games,
                 max(utc_date)::date as last_game_date,
 
@@ -245,7 +271,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             round(l3_points - l10_points, 2) as points_trend_l3_vs_l10
         from stats
         """,
-        (*params, lookback),
+        (*params, season_code, *baseline_params, lookback),
     )
     rows = queries._rows(cursor)
 
