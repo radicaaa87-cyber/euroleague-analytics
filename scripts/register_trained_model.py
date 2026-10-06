@@ -77,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         "uncertainty_calibration": report.get("uncertainty_calibration", {}),
         "feature_provenance": report.get("feature_provenance", []),
         "source_family_importance": report.get("source_family_importance", []),
+        "grouped_source_permutation_importance": report.get(
+            "grouped_source_permutation_importance",
+            [],
+        ),
         "auxiliary_targets": report.get("auxiliary_targets", {}),
     }
 
