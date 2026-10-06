@@ -9,6 +9,7 @@ from euroleague.model_signal_regimes import (
     apply_pattern_effects,
     build_signal_fingerprints,
     classify_efficiency_cycles,
+    diagnostic_feature_columns,
     filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
     learn_pattern_effects,
@@ -490,3 +491,23 @@ def test_efficiency_effect_temporal_sign_flip_neutralizes_modifier() -> None:
     row = learned["cold_regression_up"]
     assert row["temporal_stability_passed"] is False
     assert row["modifier_points"] == 0.0
+
+
+def test_full_diagnostic_feature_export_keeps_all_pregame_columns() -> None:
+    columns = [
+        "season_code",
+        "gamecode",
+        "is_home",
+        "pre_l3_fga",
+        "pre_l5_minutes",
+        "pre_role2_l5_option_rank",
+        "target_points",
+        "target_fga",
+    ]
+
+    assert diagnostic_feature_columns(columns) == [
+        "is_home",
+        "pre_l3_fga",
+        "pre_l5_minutes",
+        "pre_role2_l5_option_rank",
+    ]
