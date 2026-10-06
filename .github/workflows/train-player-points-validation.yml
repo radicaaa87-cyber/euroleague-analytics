@@ -87,11 +87,13 @@ jobs:
             docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1
 
       - name: Train regime-gated role model and validate on E2024
+        timeout-minutes: 90
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
           PGOPTIONS: "-c search_path=warehouse"
           PYTHONUNBUFFERED: "1"
         run: |
+          set -euo pipefail
           mkdir -p ml-output
           .venv/bin/python scripts/train_player_points_validation.py \
             --train-season E2023 \
@@ -104,7 +106,15 @@ jobs:
             --min-history-games 3 \
             --report ml-output/validation_report.json \
             --model ml-output/validation_candidate.pkl \
-            --predictions ml-output/e2024_validation_predictions.csv
+            --predictions ml-output/e2024_validation_predictions.csv &
+          TRAIN_PID=$!
+          while kill -0 "$TRAIN_PID" 2>/dev/null; do
+            echo "::notice::model10 training heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            ps -p "$TRAIN_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
+            du -sh ml-output 2>/dev/null || true
+            sleep 120
+          done
+          wait "$TRAIN_PID"
 
       - name: Assert blind season stayed closed
         run: |
