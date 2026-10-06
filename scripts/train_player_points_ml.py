@@ -389,6 +389,34 @@ def main(argv: list[str] | None = None) -> int:
         [float(row[index["target_fga"]]) for row in rows],
         dtype=float,
     )
+    three_pa_y = np.asarray(
+        [float(row[index["target_3pa"]]) for row in rows],
+        dtype=float,
+    )
+    fta_y = np.asarray(
+        [float(row[index["target_fta"]]) for row in rows],
+        dtype=float,
+    )
+
+    fga_per_minute_y = np.divide(
+        fga_y,
+        minutes_y,
+        out=np.zeros_like(fga_y),
+        where=minutes_y > 0,
+    )
+    three_share_y = np.divide(
+        three_pa_y,
+        fga_y,
+        out=np.zeros_like(three_pa_y),
+        where=fga_y > 0,
+    )
+    fta_per_minute_y = np.divide(
+        fta_y,
+        minutes_y,
+        out=np.zeros_like(fta_y),
+        where=minutes_y > 0,
+    )
+
     minutes_result = _benchmark_target(
         x,
         minutes_y,
@@ -397,14 +425,54 @@ def main(argv: list[str] | None = None) -> int:
         final_train_mask,
         test_mask,
     )
-    fga_result = _benchmark_target(
+    fga_rate_result = _benchmark_target(
         x,
-        fga_y,
+        fga_per_minute_y,
         tuning_train_mask,
         validation_mask,
         final_train_mask,
         test_mask,
     )
+    three_share_result = _benchmark_target(
+        x,
+        three_share_y,
+        tuning_train_mask,
+        validation_mask,
+        final_train_mask,
+        test_mask,
+    )
+    fta_rate_result = _benchmark_target(
+        x,
+        fta_per_minute_y,
+        tuning_train_mask,
+        validation_mask,
+        final_train_mask,
+        test_mask,
+    )
+
+    predicted_minutes = np.clip(minutes_result["test_prediction"], 0.0, 50.0)
+    predicted_fga_per_minute = np.clip(
+        fga_rate_result["test_prediction"],
+        0.0,
+        1.5,
+    )
+    predicted_three_share = np.clip(
+        three_share_result["test_prediction"],
+        0.0,
+        1.0,
+    )
+    predicted_fta_per_minute = np.clip(
+        fta_rate_result["test_prediction"],
+        0.0,
+        1.5,
+    )
+    predicted_fga = predicted_minutes * predicted_fga_per_minute
+    predicted_3pa = predicted_fga * predicted_three_share
+    predicted_fta = predicted_minutes * predicted_fta_per_minute
+
+    fga_total_metrics = _metric_summary(fga_y[test_mask], predicted_fga)
+    three_pa_total_metrics = _metric_summary(three_pa_y[test_mask], predicted_3pa)
+    fta_total_metrics = _metric_summary(fta_y[test_mask], predicted_fta)
 
     baseline_index = feature_names.index("pre_l10_points")
     l10_baseline_prediction = x[test_mask, baseline_index]
