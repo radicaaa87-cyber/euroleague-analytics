@@ -77,6 +77,17 @@ def feature_provenance(feature: str) -> FeatureProvenance:
             ),
         )
 
+    if name.startswith("pre_rotation_"):
+        return FeatureProvenance(
+            feature,
+            "rotation_engine",
+            "EuroLeague lineup stints",
+            (
+                "Rotation Engine: first-stint pattern, substitution cadence, late-game "
+                "presence and closing-minute role."
+            ),
+        )
+
     if "pbp_" in name:
         return FeatureProvenance(
             feature,
