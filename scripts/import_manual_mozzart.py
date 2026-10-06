@@ -1,4 +1,4 @@
-"""One-time import of manually extracted Mozzart player-points offers."""
+"""Bulk import of the cleaned Mozzart player-points archive."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import base64
 import gzip
 import json
 import os
-from datetime import time
 from pathlib import Path
 
 import psycopg
@@ -19,7 +18,8 @@ COLLECTION_ID = 4
 
 def _load_rows() -> list[dict[str, object]]:
     encoded = "".join(
-        path.read_text(encoding="utf-8").strip() for path in sorted(Path(".").glob(PART_GLOB))
+        path.read_text(encoding="utf-8").strip()
+        for path in sorted(Path(".").glob(PART_GLOB))
     )
     if not encoded:
         raise RuntimeError("Manual Mozzart payload parts are missing.")
@@ -33,15 +33,8 @@ def _load_rows() -> list[dict[str, object]]:
 def main() -> int:
     rows = _load_rows()
     settings = DatabaseSettings.from_env()
-    inserted = 0
-    missing_documents = 0
-    documents_with_offers: set[int] = set()
 
-    with psycopg.connect(
-        settings.url(),
-        autocommit=True,
-        prepare_threshold=None,
-    ) as connection:
+    with psycopg.connect(settings.url(), prepare_threshold=None) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -50,19 +43,87 @@ def main() -> int:
                 where bookmaker = 'mozzart'
                 """
             )
-            documents = {row[1]: (int(row[0]), row[2]) for row in cursor.fetchall()}
+            documents = {
+                row[1]: (int(row[0]), row[2])
+                for row in cursor.fetchall()
+            }
 
+        missing = sorted(
+            {
+                str(row["content_sha256"])
+                for row in rows
+                if str(row["content_sha256"]) not in documents
+            }
+        )
+        if missing:
+            print(
+                json.dumps(
+                    {
+                        "rows": len(rows),
+                        "missing_documents": len(missing),
+                        "missing_sha256": missing[:10],
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 2
+
+        prepared: list[dict[str, object]] = []
+        document_ids: set[int] = set()
         for row in rows:
-            document = documents.get(str(row["content_sha256"]))
-            if document is None:
-                missing_documents += 1
-                continue
-            document_id, offer_date = document
-            documents_with_offers.add(document_id)
+            document_id, offer_date = documents[str(row["content_sha256"])]
+            document_ids.add(document_id)
+            prepared.append(
+                {
+                    "document_id": document_id,
+                    "offer_date": offer_date.isoformat(),
+                    "event_time_local": row["event_time_local"],
+                    "source_event_code": row.get("source_event_code"),
+                    "participant_text": row["participant_text"],
+                    "player_name_raw": row.get("player_name_raw"),
+                    "player_name_normalized": row.get("player_name_normalized"),
+                    "team_name_raw": row.get("team_name_raw"),
+                    "points_line": row["points_line"],
+                    "under_odds": row.get("under_odds"),
+                    "over_odds": row.get("over_odds"),
+                    "page_number": row.get("page_number"),
+                    "row_text": row["row_text"],
+                    "row_sha256": row["row_sha256"],
+                }
+            )
 
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                delete from bookmaker_player_points_offer
+                where bookmaker = 'mozzart'
+                  and document_id = any(%s::bigint[])
+                """,
+                (sorted(document_ids),),
+            )
+
+            cursor.execute(
+                """
+                with src as (
+                    select *
+                    from jsonb_to_recordset(%s::jsonb) as x(
+                        document_id bigint,
+                        offer_date date,
+                        event_time_local time,
+                        source_event_code text,
+                        participant_text text,
+                        player_name_raw text,
+                        player_name_normalized text,
+                        team_name_raw text,
+                        points_line numeric,
+                        under_odds numeric,
+                        over_odds numeric,
+                        page_number integer,
+                        row_text text,
+                        row_sha256 text
+                    )
+                ),
+                ins as (
                     insert into bookmaker_player_points_offer (
                         document_id,
                         bookmaker,
@@ -80,33 +141,32 @@ def main() -> int:
                         row_text,
                         row_sha256
                     )
-                    values (
-                        %s, 'mozzart', %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s
-                    )
+                    select
+                        document_id,
+                        'mozzart',
+                        offer_date,
+                        event_time_local,
+                        source_event_code,
+                        participant_text,
+                        player_name_raw,
+                        player_name_normalized,
+                        team_name_raw,
+                        points_line,
+                        under_odds,
+                        over_odds,
+                        page_number,
+                        row_text,
+                        row_sha256
+                    from src
                     on conflict (document_id, row_sha256) do nothing
                     returning offer_id
-                    """,
-                    (
-                        document_id,
-                        offer_date,
-                        time.fromisoformat(str(row["event_time_local"])),
-                        row.get("source_event_code"),
-                        row["participant_text"],
-                        row.get("player_name_raw"),
-                        row.get("player_name_normalized"),
-                        row.get("team_name_raw"),
-                        row["points_line"],
-                        row.get("under_odds"),
-                        row.get("over_odds"),
-                        row.get("page_number"),
-                        row["row_text"],
-                        row["row_sha256"],
-                    ),
                 )
-                inserted += int(cursor.fetchone() is not None)
+                select count(*) from ins
+                """,
+                (json.dumps(prepared, ensure_ascii=False),),
+            )
+            inserted = int(cursor.fetchone()[0])
 
-        with connection.cursor() as cursor:
             cursor.execute(
                 """
                 update bookmaker_collection_run
@@ -116,19 +176,20 @@ def main() -> int:
                     fetched_count = 41,
                     parsed_document_count = %s,
                     inserted_offer_count = %s,
-                    error_count = %s,
+                    error_count = 0,
+                    collector_version = 'optimized_manual_zip_v2',
                     metadata = metadata || %s::jsonb
                 where collection_id = %s
                 """,
                 (
-                    len(documents_with_offers),
+                    len(document_ids),
                     inserted,
-                    missing_documents,
                     json.dumps(
                         {
                             "parsed_offer_rows": len(rows),
-                            "documents_with_player_points": len(documents_with_offers),
-                            "import_method": "github_actions_manual_payload_v1",
+                            "documents_with_player_points": len(document_ids),
+                            "import_method": "github_actions_bulk_jsonb_v2",
+                            "source_zip": "Srbija 13.11.2024.zip",
                             "git_commit": os.environ.get("GITHUB_SHA"),
                         }
                     ),
@@ -136,18 +197,20 @@ def main() -> int:
                 ),
             )
 
+        connection.commit()
+
     print(
         json.dumps(
             {
                 "rows": len(rows),
                 "inserted": inserted,
-                "documents_with_offers": len(documents_with_offers),
-                "missing_documents": missing_documents,
+                "documents_with_offers": len(document_ids),
+                "missing_documents": 0,
             },
             sort_keys=True,
         )
     )
-    return 0 if missing_documents == 0 else 2
+    return 0
 
 
 if __name__ == "__main__":
