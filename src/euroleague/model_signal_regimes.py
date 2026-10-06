@@ -487,3 +487,277 @@ def apply_pattern_effects(
             continue
         calibrated[index] += float(learned["calibration_correction_points"])
     return calibrated
+
+
+def _feature_column(
+    x: np.ndarray,
+    feature_names: list[str],
+    name: str,
+    *,
+    default: float = np.nan,
+) -> np.ndarray:
+    """Return one feature column or a default vector when the feature is unavailable."""
+    matrix = np.asarray(x, dtype=float)
+    if matrix.ndim != 2:
+        raise ValueError("x must be a two-dimensional feature matrix.")
+    try:
+        position = feature_names.index(name)
+    except ValueError:
+        return np.full(matrix.shape[0], default, dtype=float)
+    return np.asarray(matrix[:, position], dtype=float)
+
+
+def classify_efficiency_cycles(
+    *,
+    x: np.ndarray,
+    feature_names: list[str],
+) -> list[str]:
+    """Classify pre-game hot/cold state by phase rather than treating it as one signal.
+
+    The classifier uses only existing pre-game features. It distinguishes an early hot
+    run from a mature/extreme run that may regress, a visibly cooling hot run, a cold
+    decline with shrinking volume, and a cold recovery.
+    """
+    matrix = np.asarray(x, dtype=float)
+    if matrix.ndim != 2 or matrix.shape[1] != len(feature_names):
+        raise ValueError("feature_names must match x columns.")
+
+    hand = _feature_column(matrix, feature_names, "pre_last_hand_state", default=0.0)
+    last_ts_delta = _feature_column(
+        matrix,
+        feature_names,
+        "pre_last_ts_delta_vs_prior_l10",
+    )
+    hot_streak = _feature_column(matrix, feature_names, "pre_hot_streak_games", default=0.0)
+    avg_hot = _feature_column(matrix, feature_names, "pre_avg_hot_episode_games")
+    max_hot = _feature_column(matrix, feature_names, "pre_max_hot_episode_games")
+
+    l3_ts = _feature_column(matrix, feature_names, "pre_l3_ts_proxy")
+    l5_ts = _feature_column(matrix, feature_names, "pre_l5_ts_proxy")
+    l10_ts = _feature_column(matrix, feature_names, "pre_l10_ts_proxy")
+    l3_fga = _feature_column(matrix, feature_names, "pre_l3_fga")
+    l5_fga = _feature_column(matrix, feature_names, "pre_l5_fga")
+    l10_fga = _feature_column(matrix, feature_names, "pre_l10_fga")
+    l3_minutes = _feature_column(matrix, feature_names, "pre_l3_minutes")
+    l5_minutes = _feature_column(matrix, feature_names, "pre_l5_minutes")
+    l10_minutes = _feature_column(matrix, feature_names, "pre_l10_minutes")
+
+    labels: list[str] = []
+    for row in range(matrix.shape[0]):
+        avg_episode = avg_hot[row]
+        max_episode = max_hot[row]
+        maturity_games = max(
+            2.0,
+            0.8 * avg_episode if np.isfinite(avg_episode) and avg_episode > 0 else 3.0,
+        )
+        near_max_games = max(
+            2.0,
+            0.8 * max_episode if np.isfinite(max_episode) and max_episode > 0 else 4.0,
+        )
+
+        ts_short_gap = (
+            l3_ts[row] - l10_ts[row]
+            if np.isfinite(l3_ts[row]) and np.isfinite(l10_ts[row])
+            else np.nan
+        )
+        ts_cooling = bool(
+            np.isfinite(l3_ts[row])
+            and np.isfinite(l5_ts[row])
+            and l3_ts[row] <= l5_ts[row] - 0.015
+        )
+        ts_recovering = bool(
+            np.isfinite(l3_ts[row])
+            and np.isfinite(l5_ts[row])
+            and l3_ts[row] >= l5_ts[row] + 0.015
+        )
+        ts_extreme = bool(
+            (np.isfinite(ts_short_gap) and ts_short_gap >= 0.05)
+            or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] >= 0.10)
+        )
+
+        fga_falling = bool(
+            (
+                np.isfinite(l3_fga[row])
+                and np.isfinite(l5_fga[row])
+                and l3_fga[row] <= l5_fga[row] - 0.5
+            )
+            or (
+                np.isfinite(l3_fga[row])
+                and np.isfinite(l10_fga[row])
+                and l3_fga[row] <= l10_fga[row] - 0.75
+            )
+        )
+        minutes_falling = bool(
+            (
+                np.isfinite(l3_minutes[row])
+                and np.isfinite(l5_minutes[row])
+                and l3_minutes[row] <= l5_minutes[row] - 1.5
+            )
+            or (
+                np.isfinite(l3_minutes[row])
+                and np.isfinite(l10_minutes[row])
+                and l3_minutes[row] <= l10_minutes[row] - 2.0
+            )
+        )
+        volume_falling = fga_falling or minutes_falling
+
+        volume_not_rising = bool(
+            (
+                not np.isfinite(l3_fga[row])
+                or not np.isfinite(l5_fga[row])
+                or l3_fga[row] <= l5_fga[row] + 0.25
+            )
+            and (
+                not np.isfinite(l3_minutes[row])
+                or not np.isfinite(l5_minutes[row])
+                or l3_minutes[row] <= l5_minutes[row] + 1.0
+            )
+        )
+        volume_recovering = bool(
+            (
+                np.isfinite(l3_fga[row])
+                and np.isfinite(l5_fga[row])
+                and l3_fga[row] >= l5_fga[row]
+            )
+            or (
+                np.isfinite(l3_minutes[row])
+                and np.isfinite(l5_minutes[row])
+                and l3_minutes[row] >= l5_minutes[row]
+            )
+        )
+
+        if hand[row] > 0:
+            mature = hot_streak[row] >= maturity_games
+            near_personal_max = hot_streak[row] >= near_max_games
+            if ts_cooling and volume_falling:
+                labels.append("hot_cooling_decline")
+            elif mature and (near_personal_max or ts_extreme) and volume_not_rising:
+                labels.append("hot_regression_risk")
+            elif not mature and (
+                (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] > 0)
+                or ts_recovering
+            ):
+                labels.append("hot_start")
+            else:
+                labels.append("hot_mature")
+            continue
+
+        if hand[row] < 0:
+            if ts_recovering and volume_recovering:
+                labels.append("cold_recovery")
+            elif volume_falling:
+                labels.append("cold_decline")
+            else:
+                labels.append("cold_efficiency_only")
+            continue
+
+        labels.append("neutral")
+
+    return labels
+
+
+def learn_efficiency_cycle_effects(
+    *,
+    actual: np.ndarray,
+    predicted: np.ndarray,
+    labels: list[str],
+    min_occurrences: int = 20,
+    prior_strength: float = 20.0,
+) -> dict[str, dict[str, Any]]:
+    """Learn shrunk post-model modifiers for predefined hot/cold cycle phases."""
+    if min_occurrences < 2:
+        raise ValueError("min_occurrences must be at least 2.")
+    if prior_strength <= 0:
+        raise ValueError("prior_strength must be positive.")
+
+    actual_values = np.asarray(actual, dtype=float)
+    predicted_values = np.asarray(predicted, dtype=float)
+    if len(actual_values) != len(predicted_values) or len(labels) != len(actual_values):
+        raise ValueError("actual, predicted and labels must align.")
+
+    residual = actual_values - predicted_values
+    positions_by_label: dict[str, list[int]] = defaultdict(list)
+    for index, label in enumerate(labels):
+        if label != "neutral":
+            positions_by_label[str(label)].append(index)
+
+    learned: dict[str, dict[str, Any]] = {}
+    for label, positions in positions_by_label.items():
+        if len(positions) < min_occurrences:
+            continue
+        selected = np.asarray(positions, dtype=int)
+        mean_residual = float(np.mean(residual[selected]))
+        weight = float(len(positions) / (len(positions) + prior_strength))
+        learned[label] = {
+            "occurrences": len(positions),
+            "mean_residual_points": mean_residual,
+            "residual_std_points": float(np.std(residual[selected])),
+            "shrinkage_weight": weight,
+            "modifier_points": mean_residual * weight,
+        }
+    return learned
+
+
+def apply_efficiency_cycle_effects(
+    *,
+    predicted: np.ndarray,
+    labels: list[str],
+    learned_effects: dict[str, dict[str, Any]],
+) -> np.ndarray:
+    """Apply training-only hot/cold cycle modifiers to row-level predictions."""
+    values = np.asarray(predicted, dtype=float)
+    if len(values) != len(labels):
+        raise ValueError("predicted and labels must align.")
+
+    adjusted = values.copy()
+    for index, label in enumerate(labels):
+        learned = learned_effects.get(str(label))
+        if learned is None:
+            continue
+        adjusted[index] += float(learned["modifier_points"])
+    return adjusted
+
+
+def summarize_efficiency_cycles(
+    *,
+    actual: np.ndarray,
+    naive: np.ndarray,
+    predicted: np.ndarray,
+    labels: list[str],
+) -> list[dict[str, Any]]:
+    """Summarize realized scoring behavior for each hot/cold cycle phase."""
+    actual_values = np.asarray(actual, dtype=float)
+    naive_values = np.asarray(naive, dtype=float)
+    predicted_values = np.asarray(predicted, dtype=float)
+    if not (
+        len(actual_values)
+        == len(naive_values)
+        == len(predicted_values)
+        == len(labels)
+    ):
+        raise ValueError("actual, naive, predicted and labels must align.")
+
+    actual_delta = actual_values - naive_values
+    model_delta = predicted_values - naive_values
+    hits = _directional_hits(actual_values, naive_values, predicted_values)
+
+    rows: list[dict[str, Any]] = []
+    for label in sorted(set(labels)):
+        positions = [index for index, value in enumerate(labels) if value == label]
+        if not positions:
+            continue
+        selected = np.asarray(positions, dtype=int)
+        rows.append(
+            {
+                "state": label,
+                "occurrences": len(positions),
+                "mean_model_delta_points": float(np.mean(model_delta[selected])),
+                "mean_realized_delta_points": float(np.mean(actual_delta[selected])),
+                "mean_model_residual_points": float(
+                    np.mean(actual_values[selected] - predicted_values[selected])
+                ),
+                "directional_correction_hit_rate": float(np.mean(hits[selected])),
+            }
+        )
+    rows.sort(key=lambda item: item["occurrences"], reverse=True)
+    return rows
