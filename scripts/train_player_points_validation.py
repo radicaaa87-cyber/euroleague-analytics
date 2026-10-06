@@ -616,19 +616,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
     print(
-        "dropped_untrainable_features="
-        + json.dumps(dropped_untrainable_features, sort_keys=True)
+        "dropped_untrainable_features=" + json.dumps(dropped_untrainable_features, sort_keys=True)
     )
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
-    print(
-        "source_family_importance="
-        + json.dumps(source_family_importance[:10], sort_keys=True)
-    )
-    print(
-        "grouped_source_importance="
-        + json.dumps(grouped_source_importance[:10], sort_keys=True)
-    )
+    print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
+    print("grouped_source_importance=" + json.dumps(grouped_source_importance[:10], sort_keys=True))
     print(f"validation_controls={json.dumps(report['validation_controls'], sort_keys=True)}")
     print("blind_test_opened=false")
     return 0 if controls_status != "fail" else 2
