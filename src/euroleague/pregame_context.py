@@ -220,7 +220,7 @@ with target as (
             when r.team_code = g.home_team_code then g.away_team_code
             else g.home_team_code
         end as opponent_team_code
-    from v_game g
+    from season_schedule_game g
     join v_roster r
       on r.season_code = g.season_code
      and r.player_id = %(player_id)s
