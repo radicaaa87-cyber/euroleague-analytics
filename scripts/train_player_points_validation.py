@@ -553,6 +553,7 @@ def _training_signal_oof_history(
             "naive": np.asarray([], dtype=float),
             "predicted": np.asarray([], dtype=float),
             "fingerprints": [],
+            "temporal_blocks": [],
             "folds": [],
         }
 
@@ -561,6 +562,7 @@ def _training_signal_oof_history(
     all_naive: list[float] = []
     all_predicted: list[float] = []
     all_fingerprints: list[dict[str, Any]] = []
+    all_temporal_blocks: list[int] = []
     fold_rows: list[dict[str, Any]] = []
 
     for fold_number in range(1, len(chunks)):
@@ -634,6 +636,7 @@ def _training_signal_oof_history(
         all_naive.extend(float(value) for value in naive[evaluation_mask])
         all_predicted.extend(float(value) for value in prediction)
         all_fingerprints.extend(fingerprints)
+        all_temporal_blocks.extend([fold_number] * len(evaluation_indices))
         fold_rows.append(
             {
                 "fold": fold_number,
@@ -648,6 +651,7 @@ def _training_signal_oof_history(
         "naive": np.asarray(all_naive, dtype=float),
         "predicted": np.asarray(all_predicted, dtype=float),
         "fingerprints": all_fingerprints,
+        "temporal_blocks": all_temporal_blocks,
         "folds": fold_rows,
     }
 
@@ -1095,6 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
         naive=training_signal_oof["naive"],
         predicted=training_signal_oof["predicted"],
         fingerprints=training_signal_oof["fingerprints"],
+        temporal_blocks=training_signal_oof["temporal_blocks"],
         min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
         prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
     )
@@ -1117,6 +1122,7 @@ def main(argv: list[str] | None = None) -> int:
         actual=training_signal_oof["actual"],
         predicted=training_signal_oof["predicted"],
         labels=training_efficiency_cycle_labels,
+        temporal_blocks=training_signal_oof["temporal_blocks"],
         min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
         prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
     )
@@ -1352,6 +1358,16 @@ def main(argv: list[str] | None = None) -> int:
         },
         "dropped_untrainable_features": dropped_untrainable_features,
         "dropped_untrainable_feature_count": len(dropped_untrainable_features),
+        "temporal_signal_stability_policy": {
+            "training_source": "E2023 chronological OOF blocks only",
+            "rule": (
+                "Learned pattern and efficiency modifiers must keep the same sign "
+                "across eligible chronological OOF blocks. Sign-flip or insufficient "
+                "temporal evidence neutralizes the modifier to zero."
+            ),
+            "effect_estimator": "median of eligible chronological block means",
+            "validation_season_used_for_weights": False,
+        },
         "dropped_feature_details": dropped_feature_details,
         "training_feature_screen": {
             "minimum_e2023_finite_coverage": MIN_TRAIN_FEATURE_COVERAGE,
