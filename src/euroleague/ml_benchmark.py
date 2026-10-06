@@ -13,6 +13,8 @@ from importlib.metadata import version as distribution_version
 from typing import Any
 
 MODEL_FAMILIES = (
+    "ridge",
+    "extra_trees",
     "hist_gradient_boosting",
     "xgboost",
     "catboost",
@@ -40,6 +42,18 @@ class ModelDefinition:
 
 
 _MODEL_DEFINITIONS = {
+    "ridge": ModelDefinition(
+        family="ridge",
+        framework="scikit-learn",
+        distribution="scikit-learn",
+        model_class="Pipeline[SimpleImputer,StandardScaler,Ridge]",
+    ),
+    "extra_trees": ModelDefinition(
+        family="extra_trees",
+        framework="scikit-learn",
+        distribution="scikit-learn",
+        model_class="Pipeline[SimpleImputer,ExtraTreesRegressor]",
+    ),
     "hist_gradient_boosting": ModelDefinition(
         family="hist_gradient_boosting",
         framework="scikit-learn",
@@ -87,8 +101,68 @@ def runtime_model_identity(family: str) -> dict[str, str]:
 
 
 def candidate_specs() -> tuple[ModelCandidate, ...]:
-    """Return the fixed, ordered validation grid for all four model families."""
+    """Return the fixed, ordered validation grid for all six model families."""
     return (
+        ModelCandidate(
+            "ridge_1",
+            "ridge",
+            {"alpha": 0.1},
+        ),
+        ModelCandidate(
+            "ridge_2",
+            "ridge",
+            {"alpha": 1.0},
+        ),
+        ModelCandidate(
+            "ridge_3",
+            "ridge",
+            {"alpha": 10.0},
+        ),
+        ModelCandidate(
+            "ridge_4",
+            "ridge",
+            {"alpha": 50.0},
+        ),
+        ModelCandidate(
+            "extra_1",
+            "extra_trees",
+            {
+                "n_estimators": 250,
+                "max_depth": 10,
+                "min_samples_leaf": 3,
+                "max_features": 0.7,
+            },
+        ),
+        ModelCandidate(
+            "extra_2",
+            "extra_trees",
+            {
+                "n_estimators": 350,
+                "max_depth": 14,
+                "min_samples_leaf": 4,
+                "max_features": 0.8,
+            },
+        ),
+        ModelCandidate(
+            "extra_3",
+            "extra_trees",
+            {
+                "n_estimators": 250,
+                "max_depth": None,
+                "min_samples_leaf": 5,
+                "max_features": 0.6,
+            },
+        ),
+        ModelCandidate(
+            "extra_4",
+            "extra_trees",
+            {
+                "n_estimators": 400,
+                "max_depth": 12,
+                "min_samples_leaf": 2,
+                "max_features": 1.0,
+            },
+        ),
         ModelCandidate(
             "hist_1",
             "hist_gradient_boosting",
@@ -286,6 +360,37 @@ def candidate_specs() -> tuple[ModelCandidate, ...]:
 
 def build_model(family: str, params: dict[str, Any]) -> Any:
     """Construct one estimator; heavy ML libraries are imported only for training."""
+    if family == "ridge":
+        pipeline = import_module("sklearn.pipeline").Pipeline
+        imputer = import_module("sklearn.impute").SimpleImputer
+        scaler = import_module("sklearn.preprocessing").StandardScaler
+        ridge = import_module("sklearn.linear_model").Ridge
+        return pipeline(
+            [
+                ("imputer", imputer(strategy="median", add_indicator=True)),
+                ("scaler", scaler()),
+                ("model", ridge(**params)),
+            ]
+        )
+
+    if family == "extra_trees":
+        pipeline = import_module("sklearn.pipeline").Pipeline
+        imputer = import_module("sklearn.impute").SimpleImputer
+        estimator = import_module("sklearn.ensemble").ExtraTreesRegressor
+        return pipeline(
+            [
+                ("imputer", imputer(strategy="median", add_indicator=True)),
+                (
+                    "model",
+                    estimator(
+                        random_state=42,
+                        n_jobs=4,
+                        **params,
+                    ),
+                ),
+            ]
+        )
+
     if family == "hist_gradient_boosting":
         estimator = import_module("sklearn.ensemble").HistGradientBoostingRegressor
         return estimator(
