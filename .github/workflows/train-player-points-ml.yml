@@ -83,7 +83,7 @@ jobs:
           PGOPTIONS: "-c search_path=warehouse"
         run: |
           mkdir -p ml-output
-          .venv/bin/python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
+          .venv/bin/python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv --preblind-lock ml-output/preblind_lock.json
       - name: Persist candidate model
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -94,6 +94,7 @@ jobs:
         run: |
           .venv/bin/python scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "$MODEL_VERSION" --git-commit "$MODEL_GIT_COMMIT"
       - name: Upload ML artifacts
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: player-points-ml-${{ inputs.model_version }}
