@@ -516,7 +516,7 @@ def classify_efficiency_cycles(
 
     The classifier uses only existing pre-game features. It distinguishes an early hot
     run from a player-relative peak that may regress, a visibly cooling hot run, a cold
-    decline with shrinking volume, and a cold recovery.
+    decline with shrinking volume, and a player-relative cold regression-up setup.
     """
     matrix = np.asarray(x, dtype=float)
     if matrix.ndim != 2 or matrix.shape[1] != len(feature_names):
@@ -529,8 +529,11 @@ def classify_efficiency_cycles(
         "pre_last_ts_delta_vs_prior_l10",
     )
     hot_streak = _feature_column(matrix, feature_names, "pre_hot_streak_games", default=0.0)
+    cold_streak = _feature_column(matrix, feature_names, "pre_cold_streak_games", default=0.0)
     avg_hot = _feature_column(matrix, feature_names, "pre_avg_hot_episode_games")
+    avg_cold = _feature_column(matrix, feature_names, "pre_avg_cold_episode_games")
     max_hot = _feature_column(matrix, feature_names, "pre_max_hot_episode_games")
+    max_cold = _feature_column(matrix, feature_names, "pre_max_cold_episode_games")
 
     l3_ts = _feature_column(matrix, feature_names, "pre_l3_ts_proxy")
     l5_ts = _feature_column(matrix, feature_names, "pre_l5_ts_proxy")
@@ -653,10 +656,62 @@ def classify_efficiency_cycles(
             continue
 
         if hand[row] < 0:
-            if ts_recovering and volume_recovering:
-                labels.append("cold_recovery")
-            elif volume_falling:
+            personal_avg_cold = (
+                avg_cold[row] if np.isfinite(avg_cold[row]) and avg_cold[row] > 0 else 3.0
+            )
+            personal_max_cold = (
+                max_cold[row] if np.isfinite(max_cold[row]) and max_cold[row] > 0 else 5.0
+            )
+            cold_age_ratio = cold_streak[row] / max(personal_avg_cold, 1.0)
+            cold_max_ratio = cold_streak[row] / max(personal_max_cold, 1.0)
+            personal_efficiency_deficit = min(
+                last_ts_delta[row] if np.isfinite(last_ts_delta[row]) else np.inf,
+                ts_short_gap if np.isfinite(ts_short_gap) else np.inf,
+            )
+            extreme_below_personal_baseline = bool(
+                personal_efficiency_deficit <= -0.08
+                and (
+                    (np.isfinite(ts_short_gap) and ts_short_gap <= -0.04)
+                    or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] <= -0.10)
+                )
+            )
+            mature_for_player = cold_age_ratio >= 1.0
+            near_personal_max = cold_max_ratio >= 0.75
+            fga_supported = bool(
+                np.isfinite(l3_fga[row])
+                and np.isfinite(l5_fga[row])
+                and l3_fga[row] >= l5_fga[row] - 0.25
+            )
+            minutes_supported = bool(
+                np.isfinite(l3_minutes[row])
+                and np.isfinite(l5_minutes[row])
+                and l3_minutes[row] >= l5_minutes[row] - 1.0
+            )
+            opportunity_expanding = bool(
+                (
+                    np.isfinite(l3_fga[row])
+                    and np.isfinite(l5_fga[row])
+                    and l3_fga[row] >= l5_fga[row] + 0.5
+                )
+                or (
+                    np.isfinite(l3_minutes[row])
+                    and np.isfinite(l5_minutes[row])
+                    and l3_minutes[row] >= l5_minutes[row] + 1.5
+                )
+            )
+
+            if volume_falling:
                 labels.append("cold_decline")
+            elif (
+                (mature_for_player or near_personal_max)
+                and extreme_below_personal_baseline
+                and fga_supported
+                and minutes_supported
+                and opportunity_expanding
+            ):
+                labels.append("cold_regression_up")
+            elif ts_recovering and volume_recovering:
+                labels.append("cold_recovery")
             else:
                 labels.append("cold_efficiency_only")
             continue
@@ -665,6 +720,67 @@ def classify_efficiency_cycles(
 
     return labels
 
+
+
+def filter_noisy_signal_contributions(
+    *,
+    contributions: dict[str, np.ndarray],
+    x: np.ndarray,
+    feature_names: list[str],
+    efficiency_labels: list[str],
+) -> dict[str, np.ndarray]:
+    """Neutralize signal directions that have no causal confirmation.
+
+    This changes only MODEL 10's signal-count/fingerprint layer. The base predictor
+    still receives the same features and keeps the same prediction pipeline.
+    """
+    matrix = np.asarray(x, dtype=float)
+    row_count = matrix.shape[0]
+    if matrix.ndim != 2 or matrix.shape[1] != len(feature_names):
+        raise ValueError("feature_names must match x columns.")
+    if len(efficiency_labels) != row_count:
+        raise ValueError("efficiency_labels must contain one value per row.")
+
+    l3_fga = _feature_column(matrix, feature_names, "pre_l3_fga")
+    l5_fga = _feature_column(matrix, feature_names, "pre_l5_fga")
+    l3_minutes = _feature_column(matrix, feature_names, "pre_l3_minutes")
+    l5_minutes = _feature_column(matrix, feature_names, "pre_l5_minutes")
+
+    role_expansion_confirmed = (
+        np.isfinite(l3_fga)
+        & np.isfinite(l5_fga)
+        & np.isfinite(l3_minutes)
+        & np.isfinite(l5_minutes)
+        & (l3_fga >= l5_fga + 0.5)
+        & (l3_minutes >= l5_minutes + 1.0)
+    )
+
+    allowed_efficiency_minus = {"hot_peak_regression", "cold_decline"}
+    allowed_efficiency_plus = {"cold_regression_up"}
+
+    filtered: dict[str, np.ndarray] = {}
+    for domain, values in contributions.items():
+        source = np.asarray(values, dtype=float)
+        if source.shape != (row_count,):
+            raise ValueError(f"Contribution array for {domain} has the wrong shape.")
+        clean = source.copy()
+
+        if domain in {"pace_environment", "schedule_load"}:
+            clean[clean > 0.0] = 0.0
+
+        elif domain in {"role_volume", "rotation"}:
+            clean[(clean > 0.0) & ~role_expansion_confirmed] = 0.0
+
+        elif domain == "efficiency_state":
+            for index, label in enumerate(efficiency_labels):
+                if clean[index] > 0.0 and label not in allowed_efficiency_plus:
+                    clean[index] = 0.0
+                elif clean[index] < 0.0 and label not in allowed_efficiency_minus:
+                    clean[index] = 0.0
+
+        filtered[domain] = clean
+
+    return filtered
 
 def learn_efficiency_cycle_effects(
     *,
@@ -719,12 +835,23 @@ def apply_efficiency_cycle_effects(
     if len(values) != len(labels):
         raise ValueError("predicted and labels must align.")
 
+    expected_direction = {
+        "hot_peak_regression": -1,
+        "cold_decline": -1,
+        "cold_regression_up": 1,
+    }
     adjusted = values.copy()
     for index, label in enumerate(labels):
+        expected = expected_direction.get(str(label))
+        if expected is None:
+            continue
         learned = learned_effects.get(str(label))
         if learned is None:
             continue
-        adjusted[index] += float(learned["modifier_points"])
+        modifier = float(learned["modifier_points"])
+        if modifier == 0.0 or np.sign(modifier) != expected:
+            continue
+        adjusted[index] += modifier
     return adjusted
 
 
