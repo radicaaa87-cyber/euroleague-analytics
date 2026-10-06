@@ -147,6 +147,7 @@ def _write_predictions(
         "actual_fga",
         "predicted_fga",
         "naive_baseline_points",
+        "actual_delta_vs_naive",
         "predicted_delta_vs_naive",
         "actual_points",
         "predicted_points",
@@ -186,6 +187,7 @@ def _write_predictions(
                     "actual_fga": round(float(f_true), 4),
                     "predicted_fga": round(float(f_pred), 4),
                     "naive_baseline_points": round(float(baseline), 4),
+                    "actual_delta_vs_naive": round(float(y_true - baseline), 4),
                     "predicted_delta_vs_naive": round(float(delta_pred), 4),
                     "actual_points": round(float(y_true), 4),
                     "predicted_points": round(float(y_pred), 4),
@@ -384,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     # The blind test has already been scored at this point. Permutation
     # importance is diagnostic only and cannot change family or parameter selection.
     test_x = x[test_mask]
-    test_y = y[test_mask]
+    test_y = point_delta_y[test_mask]
     if len(test_y) > 2500:
         rng = np.random.default_rng(42)
         importance_indices = np.sort(rng.choice(len(test_y), size=2500, replace=False))
@@ -487,6 +489,8 @@ def main(argv: list[str] | None = None) -> int:
             "All four model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
             "Only the locked E2024 validation winner is scored on the E2025 blind test.",
+            "The naive baseline is the simple average of prior games in the current season; "
+            "for a season opener it falls back to the player's prior history.",
             "The point model predicts a residual from the leakage-safe simple pre-game "
             "average; final points equal naive baseline plus predicted residual.",
             "All model inputs are pre-game pre_* features plus is_home.",
