@@ -434,7 +434,7 @@ def test_efficiency_cycle_uses_attempt_weighted_shot_profile_evidence() -> None:
             # Same TS context with attempt-weighted shot evidence: regression candidate.
             [1, 0.06, 1.40, 1.75, 4, 0, 3, 0, 5, 0, 0.61, 0.60, 0.58, 10, 10, 10, 28, 28, 28],
             # Cold mirror: strong negative shot evidence makes the cold extreme explicit.
-            [-1, -0.06, -1.45, 1.80, 0, 4, 0, 3, 0, 5, 0.54, 0.55, 0.57, 10, 10, 10, 28, 28, 28],
+            [-1, -0.06, -1.45, 1.80, 0, 4, 0, 3, 0, 5, 0.54, 0.55, 0.57, 10.5, 10, 10, 29.5, 28, 28],
         ],
         dtype=float,
     )
