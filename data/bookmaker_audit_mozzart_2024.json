@@ -1,0 +1,1050 @@
+[
+  {
+    "offer_id": 17,
+    "offer_date": "2024-10-16",
+    "participant_text": "C.METU Bar",
+    "points_line": 8.5,
+    "over_odds": 1.85,
+    "under_odds": 1.95
+  },
+  {
+    "offer_id": 18,
+    "offer_date": "2024-10-16",
+    "participant_text": "K.PUNTER Bar",
+    "points_line": 13.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 19,
+    "offer_date": "2024-10-16",
+    "participant_text": "W.HERNANGOMEZ Bar",
+    "points_line": 8.5,
+    "over_odds": 1.85,
+    "under_odds": 1.95
+  },
+  {
+    "offer_id": 20,
+    "offer_date": "2024-10-16",
+    "participant_text": "J.PARKER Bar",
+    "points_line": 10.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 21,
+    "offer_date": "2024-10-16",
+    "participant_text": "J.VESELY Bar",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 22,
+    "offer_date": "2024-10-16",
+    "participant_text": "T.SATORANSKY Bar",
+    "points_line": 4.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 23,
+    "offer_date": "2024-10-16",
+    "participant_text": "N.LAPROV. Bar",
+    "points_line": 10.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 24,
+    "offer_date": "2024-10-16",
+    "participant_text": "A.ABRINES Bar",
+    "points_line": 7.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 25,
+    "offer_date": "2024-10-16",
+    "participant_text": "G.PAPAGIANNIS Mon",
+    "points_line": 6.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 26,
+    "offer_date": "2024-10-16",
+    "participant_text": "M.JAITEH Mon",
+    "points_line": 6.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 27,
+    "offer_date": "2024-10-16",
+    "participant_text": "J.BLOSSOMGAME Mon",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 28,
+    "offer_date": "2024-10-16",
+    "participant_text": "E.OKOBO Mon",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 29,
+    "offer_date": "2024-10-16",
+    "participant_text": "A.DIALLO Mon",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 30,
+    "offer_date": "2024-10-16",
+    "participant_text": "M.JAMES Mon",
+    "points_line": 16.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 31,
+    "offer_date": "2024-10-16",
+    "participant_text": "D.MOTIEJUNAS Mon",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 45,
+    "offer_date": "2024-10-23",
+    "participant_text": "I.BONGA Par",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 46,
+    "offer_date": "2024-10-23",
+    "participant_text": "CA.JONES Par",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 47,
+    "offer_date": "2024-10-23",
+    "participant_text": "S.BROWN Par",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 48,
+    "offer_date": "2024-10-23",
+    "participant_text": "I.LUNDBERG Par",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 49,
+    "offer_date": "2024-10-23",
+    "participant_text": "F.NTILIKINA Par",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 50,
+    "offer_date": "2024-10-23",
+    "participant_text": "W.CLYBURN Vir",
+    "points_line": 10.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 51,
+    "offer_date": "2024-10-23",
+    "participant_text": "A.ŽIŽIĆ Vir",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 52,
+    "offer_date": "2024-10-23",
+    "participant_text": "T.SHENGELIA Vir",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 53,
+    "offer_date": "2024-10-23",
+    "participant_text": "I.CORDINIER Vir",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 54,
+    "offer_date": "2024-10-23",
+    "participant_text": "M.BELINELLI Vir",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 55,
+    "offer_date": "2024-10-23",
+    "participant_text": "TYR.JONES Par",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 56,
+    "offer_date": "2024-10-23",
+    "participant_text": "V.MARINKOVIĆ Par",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 57,
+    "offer_date": "2024-10-23",
+    "participant_text": "M.DIOUF Vir",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 113,
+    "offer_date": "2024-11-01",
+    "participant_text": "B.COLSON Fen",
+    "points_line": 10.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 114,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.HALL Fen",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 115,
+    "offer_date": "2024-11-01",
+    "participant_text": "W.BALDWIN Fen",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 116,
+    "offer_date": "2024-11-01",
+    "participant_text": "T.BIBEROVIĆ Fen",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 117,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.HAYES Fen",
+    "points_line": 13.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 118,
+    "offer_date": "2024-11-01",
+    "participant_text": "I.BONGA Par",
+    "points_line": 8.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 119,
+    "offer_date": "2024-11-01",
+    "participant_text": "CA.JONES Par",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 120,
+    "offer_date": "2024-11-01",
+    "participant_text": "TYR.JONES Par",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 121,
+    "offer_date": "2024-11-01",
+    "participant_text": "S.BROWN Par",
+    "points_line": 13.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 122,
+    "offer_date": "2024-11-01",
+    "participant_text": "I.LUNDBERG Par",
+    "points_line": 9.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 123,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.MELLI Fen",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 124,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.GUDURIĆ Fen",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 125,
+    "offer_date": "2024-11-01",
+    "participant_text": "B.DAVIES Par",
+    "points_line": 8.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 126,
+    "offer_date": "2024-11-01",
+    "participant_text": "V.MARINKOVIĆ Par",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 127,
+    "offer_date": "2024-11-01",
+    "participant_text": "I.BRAZDEIKIS Žal",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 128,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.SIRVYDIS Žal",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 129,
+    "offer_date": "2024-11-01",
+    "participant_text": "A.SMAILAGIĆ Žal",
+    "points_line": 8.5,
+    "over_odds": 2.08,
+    "under_odds": 1.75
+  },
+  {
+    "offer_id": 130,
+    "offer_date": "2024-11-01",
+    "participant_text": "S.FRANCISCO Žal",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 131,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.GIEDRAITIS Žal",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 132,
+    "offer_date": "2024-11-01",
+    "participant_text": "J.BLOSSOMGAME Mon",
+    "points_line": 5.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 133,
+    "offer_date": "2024-11-01",
+    "participant_text": "E.OKOBO Mon",
+    "points_line": 12.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 134,
+    "offer_date": "2024-11-01",
+    "participant_text": "A.DIALLO Mon",
+    "points_line": 10.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 135,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.JAMES Mon",
+    "points_line": 15.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 136,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.MOTIEJUNAS Mon",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 137,
+    "offer_date": "2024-11-01",
+    "participant_text": "E.ULANOVAS Žal",
+    "points_line": 2.5,
+    "over_odds": 2,
+    "under_odds": 1.72
+  },
+  {
+    "offer_id": 138,
+    "offer_date": "2024-11-01",
+    "participant_text": "J.LOYD Mon",
+    "points_line": 8.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 139,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.JAITEH Mon",
+    "points_line": 7.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 140,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.DAUM Crv",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 141,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.KALINIĆ Crv",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 142,
+    "offer_date": "2024-11-01",
+    "participant_text": "C.MILLER Crv",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 143,
+    "offer_date": "2024-11-01",
+    "participant_text": "I.CANAAN Crv",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 144,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.NEDOVIĆ Crv",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 145,
+    "offer_date": "2024-11-01",
+    "participant_text": "O.YURSEVEN Pan",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 146,
+    "offer_date": "2024-11-01",
+    "participant_text": "L.BROWN Pan",
+    "points_line": 9.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 147,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.LESSORT Pan",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 148,
+    "offer_date": "2024-11-01",
+    "participant_text": "K.NUNN Pan",
+    "points_line": 16.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 149,
+    "offer_date": "2024-11-01",
+    "participant_text": "J.HERNANGOMEZ Pan",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 150,
+    "offer_date": "2024-11-01",
+    "participant_text": "T.MALEDON Asv",
+    "points_line": 16.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 151,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.SAKO Asv",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 152,
+    "offer_date": "2024-11-01",
+    "participant_text": "E.JACKSON Asv",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 153,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.DE COLO Asv",
+    "points_line": 8.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 154,
+    "offer_date": "2024-11-01",
+    "participant_text": "J.VOIGTMANN Baj",
+    "points_line": 5.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 155,
+    "offer_date": "2024-11-01",
+    "participant_text": "S.NAPIER Baj",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 156,
+    "offer_date": "2024-11-01",
+    "participant_text": "C.EDWARDS Baj",
+    "points_line": 17.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 157,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.BOOKER Baj",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 158,
+    "offer_date": "2024-11-01",
+    "participant_text": "A.OBST Baj",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 159,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.WEILER-BABB Baj",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 160,
+    "offer_date": "2024-11-01",
+    "participant_text": "U.PLAVŠIĆ Crv",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 161,
+    "offer_date": "2024-11-01",
+    "participant_text": "L.MITROVIĆ Crv",
+    "points_line": 6.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 162,
+    "offer_date": "2024-11-01",
+    "participant_text": "C.OSMAN Pan",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 163,
+    "offer_date": "2024-11-01",
+    "participant_text": "J.GRANT Pan",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 164,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.HIFI Prz",
+    "points_line": 14.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 165,
+    "offer_date": "2024-11-01",
+    "participant_text": "M.JANTUNEN Prz",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 166,
+    "offer_date": "2024-11-01",
+    "participant_text": "C.MALCOLM Prz",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 167,
+    "offer_date": "2024-11-01",
+    "participant_text": "T.WARD Prz",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 168,
+    "offer_date": "2024-11-01",
+    "participant_text": "TJ SHORTS Prz",
+    "points_line": 18.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 169,
+    "offer_date": "2024-11-01",
+    "participant_text": "T.FORREST Bas",
+    "points_line": 9.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 170,
+    "offer_date": "2024-11-01",
+    "participant_text": "T.LUWAWU Bas",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 171,
+    "offer_date": "2024-11-01",
+    "participant_text": "N.ROGKAVOP. Bas",
+    "points_line": 5.5,
+    "over_odds": 2,
+    "under_odds": 1.8
+  },
+  {
+    "offer_id": 172,
+    "offer_date": "2024-11-01",
+    "participant_text": "C.MONEKE Bas",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 173,
+    "offer_date": "2024-11-01",
+    "participant_text": "MA.HOWARD Bas",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 174,
+    "offer_date": "2024-11-01",
+    "participant_text": "D.HALL Bas",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 247,
+    "offer_date": "2024-11-07",
+    "participant_text": "F.PETRUŠEV Crv",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 248,
+    "offer_date": "2024-11-07",
+    "participant_text": "M.DAUM Crv",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 249,
+    "offer_date": "2024-11-07",
+    "participant_text": "U.PLAVŠIĆ Crv",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 250,
+    "offer_date": "2024-11-07",
+    "participant_text": "N.KALINIĆ Crv",
+    "points_line": 10.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 251,
+    "offer_date": "2024-11-07",
+    "participant_text": "C.MILLER Crv",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 252,
+    "offer_date": "2024-11-07",
+    "participant_text": "I.CANAAN Crv",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 253,
+    "offer_date": "2024-11-07",
+    "participant_text": "Y.DOS SANTOS Crv",
+    "points_line": 7.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 254,
+    "offer_date": "2024-11-07",
+    "participant_text": "N.NEDOVIĆ Crv",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 255,
+    "offer_date": "2024-11-07",
+    "participant_text": "TR.WILLIAMS Alb",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 256,
+    "offer_date": "2024-11-07",
+    "participant_text": "M.HERMANNSSON Alb",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 257,
+    "offer_date": "2024-11-07",
+    "participant_text": "M.SPAGNOLO Alb",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 258,
+    "offer_date": "2024-11-07",
+    "participant_text": "G.PROCIDA Alb",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 259,
+    "offer_date": "2024-11-07",
+    "participant_text": "T.SCHNEIDER Alb",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 260,
+    "offer_date": "2024-11-07",
+    "participant_text": "L.OLINDE Alb",
+    "points_line": 8.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 261,
+    "offer_date": "2024-11-07",
+    "participant_text": "F.CAUSEUR Arm",
+    "points_line": 5.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 262,
+    "offer_date": "2024-11-07",
+    "participant_text": "Z.LEDAY Arm",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 263,
+    "offer_date": "2024-11-07",
+    "participant_text": "L.BOLMARO Arm",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 264,
+    "offer_date": "2024-11-07",
+    "participant_text": "AR.BROOKS Arm",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 265,
+    "offer_date": "2024-11-07",
+    "participant_text": "N.MIROTIĆ Arm",
+    "points_line": 17.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 266,
+    "offer_date": "2024-11-07",
+    "participant_text": "F.CAMPAZZO Rea",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 267,
+    "offer_date": "2024-11-07",
+    "participant_text": "S.LLULL Rea",
+    "points_line": 7.5,
+    "over_odds": 1.85,
+    "under_odds": 1.95
+  },
+  {
+    "offer_id": 268,
+    "offer_date": "2024-11-07",
+    "participant_text": "M.HEZONJA Rea",
+    "points_line": 14.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 269,
+    "offer_date": "2024-11-07",
+    "participant_text": "G.DECK Rea",
+    "points_line": 10.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 270,
+    "offer_date": "2024-11-07",
+    "participant_text": "A.ABALDE Rea",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 271,
+    "offer_date": "2024-11-07",
+    "participant_text": "W.TAVARES Rea",
+    "points_line": 11.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 272,
+    "offer_date": "2024-11-07",
+    "participant_text": "J.VOIGTMANN Baj",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 273,
+    "offer_date": "2024-11-07",
+    "participant_text": "S.NAPIER Baj",
+    "points_line": 13.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 274,
+    "offer_date": "2024-11-07",
+    "participant_text": "C.EDWARDS Baj",
+    "points_line": 15.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 32,
+    "offer_date": "2024-11-20",
+    "participant_text": "W.CLYBURN Vir",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 33,
+    "offer_date": "2024-11-20",
+    "participant_text": "A.ŽIŽIĆ Vir",
+    "points_line": 7.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 34,
+    "offer_date": "2024-11-20",
+    "participant_text": "T.SHENGELIA Vir",
+    "points_line": 15.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 35,
+    "offer_date": "2024-11-20",
+    "participant_text": "I.CORDINIER Vir",
+    "points_line": 12.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 36,
+    "offer_date": "2024-11-20",
+    "participant_text": "M.BELINELLI Vir",
+    "points_line": 7.5,
+    "over_odds": 2.08,
+    "under_odds": 1.75
+  },
+  {
+    "offer_id": 37,
+    "offer_date": "2024-11-20",
+    "participant_text": "A.ŽAGARS Fen",
+    "points_line": 8.5,
+    "over_odds": 2.08,
+    "under_odds": 1.75
+  },
+  {
+    "offer_id": 38,
+    "offer_date": "2024-11-20",
+    "participant_text": "B.COLSON Fen",
+    "points_line": 9.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 39,
+    "offer_date": "2024-11-20",
+    "participant_text": "S.SANLI Fen",
+    "points_line": 6.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 40,
+    "offer_date": "2024-11-20",
+    "participant_text": "N.HAYES Fen",
+    "points_line": 17.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 41,
+    "offer_date": "2024-11-20",
+    "participant_text": "M.GUDURIĆ Fen",
+    "points_line": 11.5,
+    "over_odds": 1.8,
+    "under_odds": 2
+  },
+  {
+    "offer_id": 42,
+    "offer_date": "2024-11-20",
+    "participant_text": "A.PAJOLA Vir",
+    "points_line": 5.5,
+    "over_odds": 1.9,
+    "under_odds": 1.9
+  },
+  {
+    "offer_id": 43,
+    "offer_date": "2024-11-20",
+    "participant_text": "T.BIBEROVIĆ Fen",
+    "points_line": 10.5,
+    "over_odds": 1.95,
+    "under_odds": 1.85
+  },
+  {
+    "offer_id": 44,
+    "offer_date": "2024-11-20",
+    "participant_text": "N.MELLI Fen",
+    "points_line": 6.5,
+    "over_odds": 1.85,
+    "under_odds": 1.95
+  }
+]
