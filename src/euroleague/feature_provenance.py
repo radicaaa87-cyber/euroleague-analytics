@@ -66,6 +66,17 @@ def feature_provenance(feature: str) -> FeatureProvenance:
             "Opponent body/position/rotation profile and historical response to similar defenders.",
         )
 
+    if name.startswith("pre_role2_"):
+        return FeatureProvenance(
+            feature,
+            "pbp_role_engine",
+            "EuroLeague possessions/lineups + player box score",
+            (
+                "Role Engine 2.0: possession-normalized scoring volume, offensive "
+                "option hierarchy and teammate on/off attempt expansion."
+            ),
+        )
+
     if "pbp_" in name:
         return FeatureProvenance(
             feature,
