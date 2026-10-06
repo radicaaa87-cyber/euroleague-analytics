@@ -156,7 +156,6 @@ def test_season_parameter_and_describe_warehouse_clarify_starting_year_conventio
     assert "starting in autumn" in describe_desc.lower()
 
 
-
 def test_player_model_context_publishes_optional_target_gamecode(registry):
     prop = registry["el_get_player_model_context"].input_schema["properties"]["gamecode"]
     assert prop["type"] == "integer"
@@ -166,7 +165,6 @@ def test_player_model_context_publishes_optional_target_gamecode(registry):
         "season",
         "player",
     ]
-
 
 
 def test_paginated_tools_refuse_deep_offsets_before_the_database_runner():
