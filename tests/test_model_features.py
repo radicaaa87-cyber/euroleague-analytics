@@ -342,6 +342,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert row["teammate_pair_context"][0]["teammate_id"] == "PTEAM1"
     assert row["teammate_pair_context"][0]["scoring_association"] == "positive"
     assert row["teammate_pair_context"][0]["shared_net_rating"] == 6.7
+    assert row["teammate_pair_context"][0]["pregame_availability"]["out_score"] == 0.95
 
 
 def test_model_context_rejects_nonpositive_gamecode() -> None:
