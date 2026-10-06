@@ -17,3 +17,4 @@ model10_noise_filter_cold_regression=2026-10-06T23:06:00+02:00
 cold_streak_diagnostic=2026-10-06T23:21:00+02:00
 cold_streak_diagnostic_retry=2026-10-06T23:33:00+02:00
 temporal_stability_gate=2026-10-06T23:40:00+02:00
+full_diagnostic_mart=2026-10-06T23:59:00+02:00
