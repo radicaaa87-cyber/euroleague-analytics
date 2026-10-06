@@ -623,6 +623,12 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_role2_l5_team_fga_share" in sql
     assert "pre_role2_l5_primary_option_rate" in sql
     assert "pre_role2_l5_max_teammate_off_fga_uplift" in sql
+    assert "player_stint_ordered" in sql
+    assert "player_rotation_game" in sql
+    assert "pre_rotation_l5_first_stint_minutes" in sql
+    assert "pre_rotation_l5_stint_count" in sql
+    assert "pre_rotation_l5_close_game_rate" in sql
+    assert "pre_rotation_l5_closing_5m_share" in sql
     assert "player_top_pair_pregame" in sql
     assert "pre_l5_top_pair_shared_minutes" in sql
     assert "pre_l5_top_pair_net_rating" in sql
@@ -690,6 +696,8 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_last_context_neutral_fga_delta_vs_l10",
         "pre_role2_l5_fga_per_100_possessions",
         "pre_role2_l5_max_teammate_off_fga_uplift",
+        "pre_rotation_l5_first_stint_minutes",
+        "pre_rotation_l5_closing_5m_share",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -719,6 +727,8 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_last_context_neutral_fga_delta_vs_l10",
         "pre_role2_l5_fga_per_100_possessions",
         "pre_role2_l5_max_teammate_off_fga_uplift",
+        "pre_rotation_l5_first_stint_minutes",
+        "pre_rotation_l5_closing_5m_share",
     ]
 
 
