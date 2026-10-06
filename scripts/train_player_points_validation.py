@@ -38,8 +38,11 @@ from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_pref
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
 from euroleague.model_signal_regimes import (
     ablation_signal_contributions,
+    apply_pattern_effects,
     build_signal_fingerprints,
+    learn_pattern_effects,
     signal_domain_columns,
+    summarize_pattern_stability,
     summarize_repeating_patterns,
     summarize_signal_tiers,
 )
@@ -66,6 +69,10 @@ MATCHUP_SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75)
 PROGRESS_HEARTBEAT_SECONDS = 60
 PROGRESS_STALL_WARNING_SECONDS = 300
 PROGRESS_HARD_TIMEOUT_SECONDS = 1200
+
+MODEL10_PATTERN_OOF_BLOCKS = 4
+MODEL10_PATTERN_MIN_OCCURRENCES = 20
+MODEL10_PATTERN_PRIOR_STRENGTH = 20.0
 
 _PROGRESS_LOCK = threading.Lock()
 _PROGRESS_PHASE = "startup"
@@ -511,6 +518,128 @@ def _benchmark_point_residual_stable(
     }
 
 
+def _training_signal_oof_history(
+    *,
+    x: np.ndarray,
+    y: np.ndarray,
+    naive: np.ndarray,
+    residual_target: np.ndarray,
+    feature_names: list[str],
+    train_mask: np.ndarray,
+    timestamps: list[Any],
+    selected: dict[str, Any],
+) -> dict[str, Any]:
+    """Build chronological E2023 out-of-fold signal history for pattern calibration."""
+    train_indices = np.flatnonzero(train_mask)
+    ordered = sorted(
+        (int(index) for index in train_indices),
+        key=lambda index: (str(timestamps[index]), index),
+    )
+    chunks = [
+        np.asarray(chunk, dtype=int)
+        for chunk in np.array_split(np.asarray(ordered, dtype=int), MODEL10_PATTERN_OOF_BLOCKS)
+        if len(chunk)
+    ]
+    if len(chunks) < 2:
+        return {
+            "indices": np.asarray([], dtype=int),
+            "actual": np.asarray([], dtype=float),
+            "naive": np.asarray([], dtype=float),
+            "predicted": np.asarray([], dtype=float),
+            "fingerprints": [],
+            "folds": [],
+        }
+
+    all_indices: list[int] = []
+    all_actual: list[float] = []
+    all_naive: list[float] = []
+    all_predicted: list[float] = []
+    all_fingerprints: list[dict[str, Any]] = []
+    fold_rows: list[dict[str, Any]] = []
+
+    for fold_number in range(1, len(chunks)):
+        history_indices = np.concatenate(chunks[:fold_number])
+        evaluation_indices = chunks[fold_number]
+        history_mask = np.zeros(len(x), dtype=bool)
+        evaluation_mask = np.zeros(len(x), dtype=bool)
+        history_mask[history_indices] = True
+        evaluation_mask[evaluation_indices] = True
+
+        model = build_model(selected["family"], selected["params"])
+        model.fit(x[history_mask], residual_target[history_mask])
+        raw_delta = np.asarray(model.predict(x[evaluation_mask]), dtype=float)
+
+        gate_result = _fit_regime_gate(
+            x,
+            feature_names,
+            residual_target,
+            history_mask,
+            evaluation_mask,
+        )
+        gate_score = np.asarray(gate_result["validation_score"], dtype=float)
+        gate = selected["regime_gate_floor"] + (
+            1.0 - selected["regime_gate_floor"]
+        ) * gate_score
+
+        matchup_result = _fit_matchup_adjustment(
+            x,
+            feature_names,
+            residual_target,
+            history_mask,
+            evaluation_mask,
+        )
+        matchup_delta = np.asarray(matchup_result["validation_delta"], dtype=float)
+        delta = (
+            raw_delta * selected["residual_shrinkage"] * gate
+            + matchup_delta * selected["matchup_shrinkage"]
+        )
+        prediction = naive[evaluation_mask] + delta
+
+        contributions = ablation_signal_contributions(
+            model=model,
+            reference_x=x[history_mask],
+            evaluation_x=x[evaluation_mask],
+            feature_names=feature_names,
+            residual_scale=selected["residual_shrinkage"],
+            row_gate=gate,
+        )
+        matchup_signal = matchup_delta * selected["matchup_shrinkage"]
+        if "matchup_opponent" in contributions:
+            contributions["matchup_opponent"] = (
+                contributions["matchup_opponent"] + matchup_signal
+            )
+        else:
+            contributions["matchup_opponent"] = matchup_signal
+
+        fingerprints = build_signal_fingerprints(
+            contributions,
+            delta,
+            contribution_floor_points=0.25,
+        )
+
+        all_indices.extend(int(index) for index in evaluation_indices)
+        all_actual.extend(float(value) for value in y[evaluation_mask])
+        all_naive.extend(float(value) for value in naive[evaluation_mask])
+        all_predicted.extend(float(value) for value in prediction)
+        all_fingerprints.extend(fingerprints)
+        fold_rows.append(
+            {
+                "fold": fold_number,
+                "history_rows": len(history_indices),
+                "evaluation_rows": len(evaluation_indices),
+            }
+        )
+
+    return {
+        "indices": np.asarray(all_indices, dtype=int),
+        "actual": np.asarray(all_actual, dtype=float),
+        "naive": np.asarray(all_naive, dtype=float),
+        "predicted": np.asarray(all_predicted, dtype=float),
+        "fingerprints": all_fingerprints,
+        "folds": fold_rows,
+    }
+
+
 def _benchmark_validation_target(
     x: np.ndarray,
     y: np.ndarray,
@@ -665,7 +794,9 @@ def _write_validation_predictions(
     actual: np.ndarray,
     naive: np.ndarray,
     predicted: np.ndarray,
+    calibrated_predicted: np.ndarray,
     signal_fingerprints: list[dict[str, Any]],
+    learned_pattern_effects: dict[str, dict[str, Any]],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = (
@@ -686,6 +817,8 @@ def _write_validation_predictions(
                 "actual_points",
                 "naive_points",
                 "predicted_points",
+                "calibrated_predicted_points",
+                "pattern_calibration_correction_points",
                 "prediction_error",
                 "absolute_error",
                 "signal_tier",
@@ -696,20 +829,29 @@ def _write_validation_predictions(
             ],
         )
         writer.writeheader()
-        for row, y_true, baseline, y_pred, signal_row in zip(
+        for row, y_true, baseline, y_pred, calibrated_y_pred, signal_row in zip(
             validation_rows,
             actual,
             naive,
             predicted,
+            calibrated_predicted,
             signal_fingerprints,
             strict=True,
         ):
+            learned = learned_pattern_effects.get(str(signal_row["fingerprint"]))
+            correction = (
+                float(learned["calibration_correction_points"])
+                if learned and bool(learned.get("stable_direction"))
+                else 0.0
+            )
             writer.writerow(
                 {
                     **{field: row[index[field]] for field in fields},
                     "actual_points": round(float(y_true), 4),
                     "naive_points": round(float(baseline), 4),
                     "predicted_points": round(float(y_pred), 4),
+                    "calibrated_predicted_points": round(float(calibrated_y_pred), 4),
+                    "pattern_calibration_correction_points": round(correction, 4),
                     "prediction_error": round(float(y_pred - y_true), 4),
                     "absolute_error": round(float(abs(y_pred - y_true)), 4),
                     "signal_tier": signal_row["signal_tier"],
@@ -880,6 +1022,53 @@ def main(argv: list[str] | None = None) -> int:
         fingerprints=signal_fingerprints,
         min_occurrences=3,
     )
+    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
+    pattern_stability = summarize_pattern_stability(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        groups={
+            "game": [
+                f"{row[index['season_code']]}:{row[index['gamecode']]}"
+                for row in validation_rows
+            ],
+            "player": [str(row[index["player_id"]]) for row in validation_rows],
+            "team": [str(row[index["team_code"]]) for row in validation_rows],
+            "month": [str(row[index["game_date"]])[:7] for row in validation_rows],
+        },
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+    )
+
+    _set_progress("model10_training_pattern_oof")
+    training_signal_oof = _training_signal_oof_history(
+        x=x,
+        y=y,
+        naive=naive,
+        residual_target=point_delta,
+        feature_names=feature_names,
+        train_mask=train_mask,
+        timestamps=timestamps,
+        selected=point_result["selected"],
+    )
+    learned_pattern_effects = learn_pattern_effects(
+        actual=training_signal_oof["actual"],
+        naive=training_signal_oof["naive"],
+        predicted=training_signal_oof["predicted"],
+        fingerprints=training_signal_oof["fingerprints"],
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+        prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
+    )
+    calibrated_validation_prediction = apply_pattern_effects(
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        learned_effects=learned_pattern_effects,
+    )
+    calibrated_validation_metrics = _metric_summary(
+        y[validation_mask],
+        calibrated_validation_prediction,
+    )
 
     minutes_y = np.asarray([float(row[index["target_minutes"]]) for row in rows], dtype=float)
     fga_y = np.asarray([float(row[index["target_fga"]]) for row in rows], dtype=float)
@@ -1021,7 +1210,6 @@ def main(argv: list[str] | None = None) -> int:
         timestamps=timestamps,
         eligible_mask=train_mask | validation_mask,
     )
-    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
     volatility_index = feature_names.index("pre_l10_points_std")
     volatility_values = x[validation_mask, volatility_index]
     finite_volatility = volatility_values[np.isfinite(volatility_values)]
@@ -1132,7 +1320,7 @@ def main(argv: list[str] | None = None) -> int:
             "selected_shrinkage": point_result["selected"]["matchup_shrinkage"],
         },
         "model10_situation_signals": {
-            "status": "VALIDATION_DIAGNOSTIC_ONLY",
+            "status": "MODEL10_1_TRAIN_ONLY_PATTERN_CALIBRATION",
             "contribution_floor_points": 0.25,
             "domains": {
                 domain: [feature_names[position] for position in positions]
@@ -1141,6 +1329,28 @@ def main(argv: list[str] | None = None) -> int:
             "tier_summary": signal_tier_summary,
             "repeating_patterns_min_occurrences": 3,
             "repeating_patterns": repeating_signal_patterns,
+            "pattern_stability_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+            "pattern_stability": pattern_stability,
+            "training_only_pattern_calibration": {
+                "source_season": args.train_season,
+                "method": "chronological_out_of_fold",
+                "oof_blocks": MODEL10_PATTERN_OOF_BLOCKS,
+                "oof_rows": len(training_signal_oof["indices"]),
+                "folds": training_signal_oof["folds"],
+                "min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+                "prior_strength": MODEL10_PATTERN_PRIOR_STRENGTH,
+                "learned_pattern_count": len(learned_pattern_effects),
+                "learned_effects": learned_pattern_effects,
+                "validation_metrics_after_calibration": calibrated_validation_metrics,
+                "validation_mae_change_vs_uncalibrated": (
+                    calibrated_validation_metrics["mae"] - validation_metrics["mae"]
+                ),
+                "policy": (
+                    "Pattern magnitude corrections are learned only from chronological "
+                    "out-of-fold rows in the training season. E2024 outcomes never set "
+                    "a calibration magnitude."
+                ),
+            },
             "interpretation": (
                 "Signal tiers count independent basketball situation domains whose "
                 "ablation contribution supports the model correction. Repeated-pattern "
@@ -1246,6 +1456,9 @@ def main(argv: list[str] | None = None) -> int:
                 "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
                 "regime_gate_floor": point_result["selected"]["regime_gate_floor"],
                 "matchup_shrinkage": point_result["selected"]["matchup_shrinkage"],
+                "pattern_calibration_effects": learned_pattern_effects,
+                "pattern_calibration_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
+                "pattern_calibration_prior_strength": MODEL10_PATTERN_PRIOR_STRENGTH,
                 "regime_gate_model": regime_gate["model"],
                 "regime_gate_features": regime_gate["features"],
                 "regime_gate_q25_abs_residual": regime_gate["train_q25_abs_residual"],
@@ -1272,7 +1485,9 @@ def main(argv: list[str] | None = None) -> int:
         y[validation_mask],
         validation_naive,
         validation_prediction,
+        calibrated_validation_prediction,
         signal_fingerprints,
+        learned_pattern_effects,
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
@@ -1284,6 +1499,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"regime_gate={json.dumps(report['regime_gate'], sort_keys=True)}")
     print("matchup_adjustment=" + json.dumps(report["matchup_adjustment"], sort_keys=True))
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
+    print(
+        "model10_pattern_calibration="
+        + json.dumps(
+            {
+                "oof_rows": len(training_signal_oof["indices"]),
+                "learned_pattern_count": len(learned_pattern_effects),
+                "validation_metrics_after_calibration": calibrated_validation_metrics,
+            },
+            sort_keys=True,
+        )
+    )
     print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
     print("grouped_source_importance=" + json.dumps(grouped_source_importance[:10], sort_keys=True))
     print(f"validation_controls={json.dumps(report['validation_controls'], sort_keys=True)}")
