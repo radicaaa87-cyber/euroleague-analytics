@@ -27,6 +27,8 @@ def test_every_candidate_uses_a_supported_family_and_nonempty_params() -> None:
 
 def test_registry_metadata_exists_for_every_family() -> None:
     expected_classes = {
+        "ridge": "Pipeline[SimpleImputer,StandardScaler,Ridge]",
+        "extra_trees": "Pipeline[SimpleImputer,ExtraTreesRegressor]",
         "hist_gradient_boosting": "HistGradientBoostingRegressor",
         "xgboost": "XGBRegressor",
         "catboost": "CatBoostRegressor",
