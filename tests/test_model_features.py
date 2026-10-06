@@ -629,6 +629,16 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_rotation_l5_stint_count" in sql
     assert "pre_rotation_l5_close_game_rate" in sql
     assert "pre_rotation_l5_closing_5m_share" in sql
+    assert "player_season_summary" in sql
+    assert "player_season_transition" in sql
+    assert "lag(season_minutes) over season_order" in sql
+    assert "pre_transition_previous_season_minutes" in sql
+    assert "pre_transition_previous_season_fga" in sql
+    assert "pre_transition_previous_season_starter_rate" in sql
+    assert "pre_transition_team_changed" in sql
+    assert "pre_transition_early_season" in sql
+    assert "pre_transition_minutes_gap_vs_previous_season" in sql
+    assert "pre_transition_fga_gap_vs_previous_season" in sql
     assert "player_top_pair_pregame" in sql
     assert "pre_l5_top_pair_shared_minutes" in sql
     assert "pre_l5_top_pair_net_rating" in sql
@@ -698,6 +708,8 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_role2_l5_max_teammate_off_fga_uplift",
         "pre_rotation_l5_first_stint_minutes",
         "pre_rotation_l5_closing_5m_share",
+        "pre_transition_previous_season_minutes",
+        "pre_transition_fga_gap_vs_previous_season",
         "feature_cutoff_time",
         "game_tipoff_utc",
         "target_points",
@@ -729,6 +741,8 @@ def test_model_feature_columns_exclude_targets_ids_and_bookmaker_fields() -> Non
         "pre_role2_l5_max_teammate_off_fga_uplift",
         "pre_rotation_l5_first_stint_minutes",
         "pre_rotation_l5_closing_5m_share",
+        "pre_transition_previous_season_minutes",
+        "pre_transition_fga_gap_vs_previous_season",
     ]
 
 
