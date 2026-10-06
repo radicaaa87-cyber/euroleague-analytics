@@ -271,7 +271,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             round(l3_points - l10_points, 2) as points_trend_l3_vs_l10
         from stats
         """,
-        (*params, season_code, *baseline_params, lookback),
+        (*params, lookback, season_code, *baseline_params),
     )
     rows = queries._rows(cursor)
 
