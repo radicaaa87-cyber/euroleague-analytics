@@ -28,6 +28,7 @@ from train_player_points_ml import (
     _metric_summary,
     _season_mask,
 )
+
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
@@ -38,7 +39,6 @@ from euroleague.model_validation import (
     segment_stability_audit,
 )
 from euroleague.role_projection import role_base_projection
-
 
 MIN_TRAIN_FEATURE_COVERAGE = 0.05
 POINT_RESIDUAL_SHRINKAGE_GRID = (0.25, 0.5, 0.75, 1.0)
