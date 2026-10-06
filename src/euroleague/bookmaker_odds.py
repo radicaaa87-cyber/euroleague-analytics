@@ -345,6 +345,7 @@ def _parse_row(
         row_text=compact,
     )
 
+
 def parse_mozzart_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
     """Parse only the central EuroLeague player-points table from Mozzart PDFs.
 
