@@ -89,3 +89,6 @@ def test_role_context_sql_reenforces_the_72h_cutoff() -> None:
     assert "'player_id', tr.player_id" in ROLE_CONTEXT_SQL
     assert "teammate_max_source_confidence" in ROLE_CONTEXT_SQL
     assert "context_max_source_confidence" in ROLE_CONTEXT_SQL
+    assert "pregame_context_collection" in ROLE_CONTEXT_SQL
+    assert "context_data_available" in ROLE_CONTEXT_SQL
+    assert "context_query_success_rate" in ROLE_CONTEXT_SQL
