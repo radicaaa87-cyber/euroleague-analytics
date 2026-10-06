@@ -15,6 +15,7 @@ from typing import Any
 
 from euroleague.config import DatabaseSettings
 from euroleague.mcp.db import connect
+from euroleague.travel import travel_distance_sql
 
 _MINUTES_COLUMNS = {
     "official": "seconds_official",
@@ -47,6 +48,13 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         seconds = _MINUTES_COLUMNS[minutes_basis]
     except KeyError as exc:
         raise ValueError("minutes_basis must be one of: official, corrected, raw") from exc
+
+    previous_venue = (
+        "case when role_prev_is_home then role_prev_team_code "
+        "else role_prev_opponent_team_code end"
+    )
+    current_venue = "case when is_home then team_code else opponent_team_code end"
+    travel_km_sql = travel_distance_sql(previous_venue, current_venue)
 
     return f"""
     with requested_seasons as (
@@ -670,6 +678,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             *,
             lag(is_starter) over role_all as role_prev_starter,
             lag(is_home) over role_all as role_prev_is_home,
+            lag(team_code) over role_all as role_prev_team_code,
+            lag(opponent_team_code) over role_all as role_prev_opponent_team_code,
             round(
                 avg(seconds_played::numeric / 60.0) over role_w5,
                 3
@@ -742,7 +752,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                  and is_home is distinct from role_prev_is_home
                     then 1
                 else 0
-            end as home_away_switch_event
+            end as home_away_switch_event,
+            round(({travel_km_sql})::numeric, 1) as travel_air_km_to_game
         from player_role_baseline
     ),
     player_role_reasons as (
@@ -1321,6 +1332,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 ) / 3600.0,
                 2
             ) as pre_hours_rest,
+            travel_air_km_to_game as pre_travel_air_km,
             lag(not is_home) over wall as pre_last_was_away,
             round(
                 avg(case when not is_home then 1.0 else 0.0 end) over w5,
@@ -1746,6 +1758,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_last_was_starter,
         pf.pre_days_rest,
         pf.pre_hours_rest,
+        pf.pre_travel_air_km,
         pf.pre_last_was_away,
         pf.pre_l5_away_rate,
         pf.pre_away_games_last_3,
