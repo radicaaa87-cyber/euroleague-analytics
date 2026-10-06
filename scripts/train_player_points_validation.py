@@ -41,6 +41,7 @@ from euroleague.model_signal_regimes import (
     apply_efficiency_cycle_effects,
     apply_pattern_effects,
     build_signal_fingerprints,
+    _feature_column,
     classify_efficiency_cycles,
     filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
