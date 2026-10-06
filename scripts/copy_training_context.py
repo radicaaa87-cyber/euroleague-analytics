@@ -206,10 +206,7 @@ def main() -> int:
             order by season_code, gamecode, team_code, collected_at
             """,
         )
-        collection_rows = [
-            (*row[:11], Jsonb(row[11]))
-            for row in collection_raw
-        ]
+        collection_rows = [(*row[:11], Jsonb(row[11])) for row in collection_raw]
         collection_count = _executemany(
             target,
             """
