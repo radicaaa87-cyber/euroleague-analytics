@@ -9,9 +9,11 @@ being guessed.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import pairwise
 from math import asin, cos, radians, sin, sqrt
-from typing import Any, Iterable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -117,10 +119,10 @@ def travel_context(
     last_venue = venue_codes[0] if venue_codes else None
     from_last = air_distance_km(last_venue, target_venue)
 
-    route = list(reversed(venue_codes)) + [target_venue]
+    route = [*reversed(venue_codes), target_venue]
     total = 0.0
     covered = 0
-    for origin, destination in zip(route, route[1:], strict=False):
+    for origin, destination in pairwise(route):
         distance = air_distance_km(origin, destination)
         if distance is None:
             continue
