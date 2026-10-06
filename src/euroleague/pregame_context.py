@@ -207,7 +207,12 @@ with target as (
         g.gamecode,
         g.utc_date as tipoff,
         r.team_code,
-        r.position_name
+        r.position_name,
+        (r.team_code = g.home_team_code) as is_home,
+        case
+            when r.team_code = g.home_team_code then g.away_team_code
+            else g.home_team_code
+        end as opponent_team_code
     from v_game g
     join v_roster r
       on r.season_code = g.season_code
@@ -224,6 +229,9 @@ self_context as (
         coalesce(f.context_out_score, 0) as self_out_score,
         coalesce(f.context_doubt_score, 0) as self_doubt_score,
         coalesce(f.context_return_score, 0) as self_return_score,
+        coalesce(f.context_max_source_confidence, 0)
+            as self_max_source_confidence,
+        coalesce(f.context_max_severity, 0) as self_max_severity,
         f.context_feature_cutoff_time
     from target t
     left join v_pregame_player_context_features f
@@ -245,6 +253,8 @@ teammate_signal as (
                 then e.severity * e.source_confidence
             else 0
         end) as doubt_score,
+        max(e.source_confidence) as source_confidence,
+        max(e.severity) as severity,
         max(e.published_at) as event_cutoff_time
     from target t
     join pregame_context_event e
@@ -263,6 +273,8 @@ teammate_role as (
         s.player_id,
         s.out_score,
         s.doubt_score,
+        s.source_confidence,
+        s.severity,
         s.event_cutoff_time,
         tr.position_name as teammate_position_name,
         recent.avg_minutes_l5,
@@ -297,6 +309,9 @@ team_context as (
         coalesce(f.team_context_event_count, 0) as team_event_count,
         coalesce(f.team_role_up_score, 0) as team_role_up_score,
         coalesce(f.team_role_down_score, 0) as team_role_down_score,
+        coalesce(f.team_context_max_source_confidence, 0)
+            as team_max_source_confidence,
+        coalesce(f.team_context_max_severity, 0) as team_max_severity,
         f.team_context_feature_cutoff_time
     from target t
     left join v_pregame_team_context_features f
@@ -305,16 +320,36 @@ team_context as (
      and f.team_code = t.team_code
 )
 select
+    t.tipoff as target_tipoff_utc,
+    t.team_code as target_team_code,
+    t.opponent_team_code,
+    t.is_home,
     sc.self_event_count,
     sc.self_role_up_score,
     sc.self_role_down_score,
     sc.self_out_score,
     sc.self_doubt_score,
     sc.self_return_score,
+    sc.self_max_source_confidence,
+    sc.self_max_severity,
     tc.team_event_count,
     tc.team_role_up_score,
     tc.team_role_down_score,
+    tc.team_max_source_confidence,
+    tc.team_max_severity,
     count(tr.player_id) as teammate_availability_signal_count,
+    coalesce(max(tr.source_confidence), 0) as teammate_max_source_confidence,
+    coalesce(max(tr.severity), 0) as teammate_max_severity,
+    greatest(
+        sc.self_max_source_confidence,
+        tc.team_max_source_confidence,
+        coalesce(max(tr.source_confidence), 0)
+    ) as context_max_source_confidence,
+    greatest(
+        sc.self_max_severity,
+        tc.team_max_severity,
+        coalesce(max(tr.severity), 0)
+    ) as context_max_severity,
     round(sum(coalesce(tr.avg_minutes_l5, 0) * tr.out_score), 3)
         as teammate_out_vacated_minutes_l5,
     round(sum(coalesce(tr.avg_minutes_l5, 0) * tr.doubt_score), 3)
@@ -340,6 +375,10 @@ cross join self_context sc
 cross join team_context tc
 left join teammate_role tr on true
 group by
+    t.tipoff,
+    t.team_code,
+    t.opponent_team_code,
+    t.is_home,
     t.position_name,
     sc.self_event_count,
     sc.self_role_up_score,
@@ -347,10 +386,14 @@ group by
     sc.self_out_score,
     sc.self_doubt_score,
     sc.self_return_score,
+    sc.self_max_source_confidence,
+    sc.self_max_severity,
     sc.context_feature_cutoff_time,
     tc.team_event_count,
     tc.team_role_up_score,
     tc.team_role_down_score,
+    tc.team_max_source_confidence,
+    tc.team_max_severity,
     tc.team_context_feature_cutoff_time
 """
 
