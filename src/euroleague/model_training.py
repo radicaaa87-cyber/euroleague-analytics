@@ -108,7 +108,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ls.gamecode,
             lp.player_id,
             ls.home_lineup_id as lineup_id,
-            greatest(ls.duration_seconds_raw, 0) as duration_seconds
+            greatest(ls.duration_seconds_raw, 0) as duration_seconds,
+            ls.home_points as team_points,
+            ls.away_points as opponent_points,
+            ls.possessions_home as team_possessions,
+            ls.possessions_away as opponent_possessions
         from lineup_stint ls
         join requested_seasons rs using (season_code)
         join v_game g
@@ -125,7 +129,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ls.gamecode,
             lp.player_id,
             ls.away_lineup_id as lineup_id,
-            greatest(ls.duration_seconds_raw, 0) as duration_seconds
+            greatest(ls.duration_seconds_raw, 0) as duration_seconds,
+            ls.away_points as team_points,
+            ls.home_points as opponent_points,
+            ls.possessions_away as team_possessions,
+            ls.possessions_home as opponent_possessions
         from lineup_stint ls
         join requested_seasons rs using (season_code)
         join v_game g
@@ -153,7 +161,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             gamecode,
             player_id,
             lineup_id,
-            sum(duration_seconds) as lineup_seconds
+            sum(duration_seconds) as lineup_seconds,
+            sum(team_points) as lineup_team_points,
+            sum(opponent_points) as lineup_opponent_points,
+            sum(team_possessions) as lineup_team_possessions,
+            sum(opponent_possessions) as lineup_opponent_possessions
         from player_stint_rows
         group by 1, 2, 3, 4
     ),
