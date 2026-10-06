@@ -32,6 +32,15 @@ ROW_RE = re.compile(
     r"(?P<odd2>\d{1,2}[.,]\d{2})(?:\s|$)"
 )
 
+ROW_NO_CODE_RE = re.compile(
+    r"^(?:(?P<day>Pon|Uto|Sre|Čet|Cet|Pet|Sub|Ned)\s+)?"
+    r"(?P<clock>\d{1,2}:\d{2})\s+"
+    r"(?P<body>.+?)\s+"
+    r"(?P<line>\d{1,2}[.,]\d)\s+"
+    r"(?P<odd1>\d{1,2}[.,]\d{2})\s+"
+    r"(?P<odd2>\d{1,2}[.,]\d{2})(?:\s|$)"
+)
+
 STARBET_POINTS_MARKERS = (
     "euroleague player points",
     "euroleague players",
@@ -45,6 +54,23 @@ STARBET_OTHER_MARKERS = (
 )
 MOZZART_SECTION_MARKERS = ("kosarka igraci",)
 MOZZART_POINTS_MARKER = "broj poena igraca na mecu"
+GENERIC_EUROLEAGUE_MARKERS = ("evroliga", "euroleague")
+GENERIC_PLAYER_POINTS_MARKERS = (
+    "poeni igraca",
+    "broj poena igraca",
+    "player points",
+    "players points",
+)
+GENERIC_OTHER_PROP_MARKERS = (
+    "skok",
+    "asist",
+    "trojk",
+    "three",
+    "rebound",
+    "assist",
+    "blok",
+    "steal",
+)
 
 
 @dataclass(frozen=True)
@@ -68,7 +94,7 @@ class ParsedOffer:
     bookmaker: str
     page_number: int
     event_time_local: time
-    source_event_code: str
+    source_event_code: str | None
     participant_text: str
     points_line: float
     under_odds: float
@@ -261,31 +287,39 @@ def resolve_participant(
     )
 
 
-def _parse_row(line: str, *, bookmaker: str, page_number: int) -> ParsedOffer | None:
+def _parse_row(
+    line: str,
+    *,
+    bookmaker: str,
+    page_number: int,
+    odds_order: str | None = None,
+) -> ParsedOffer | None:
     compact = SPACE_RE.sub(" ", line).strip()
     match = ROW_RE.match(compact)
+    if match is None:
+        match = ROW_NO_CODE_RE.match(compact)
     if match is None:
         return None
 
     odd1 = _decimal(match.group("odd1"))
     odd2 = _decimal(match.group("odd2"))
-    if bookmaker == "mozzart":
+    if odds_order == "over_under" or (odds_order is None and bookmaker == "mozzart"):
         over_odds, under_odds = odd1, odd2
     else:
         under_odds, over_odds = odd1, odd2
 
+    code = match.groupdict().get("code")
     return ParsedOffer(
         bookmaker=bookmaker,
         page_number=page_number,
         event_time_local=_parse_clock(match.group("clock")),
-        source_event_code=match.group("code"),
+        source_event_code=code,
         participant_text=match.group("body").strip(),
         points_line=_decimal(match.group("line")),
         under_odds=under_odds,
         over_odds=over_odds,
         row_text=compact,
     )
-
 
 def parse_mozzart_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
     """Parse the central EuroLeague player-points line from Mozzart daily PDFs."""
@@ -357,3 +391,77 @@ def parse_starbet_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]
                 offers.append(offer)
 
     return offers
+
+def _generic_player_points_odds_order(key: str) -> str:
+    """Infer whether a table prints under or over odds first from its header."""
+    under_positions = [pos for token in ("manje", "under") if (pos := key.find(token)) >= 0]
+    over_positions = [pos for token in ("vise", "over") if (pos := key.find(token)) >= 0]
+    if under_positions and over_positions:
+        return "under_over" if min(under_positions) < min(over_positions) else "over_under"
+    return "under_over"
+
+
+def parse_generic_euroleague_player_points_pages(
+    pages: Iterable[str],
+    *,
+    bookmaker: str,
+) -> list[ParsedOffer]:
+    """Parse EuroLeague player-points rows only after strict section markers."""
+    offers: list[ParsedOffer] = []
+    euroleague_seen = False
+    in_points = False
+    odds_order = "under_over"
+    lines_since_header = 0
+
+    for page_number, page_text in enumerate(pages, start=1):
+        for raw_line in page_text.splitlines():
+            line = SPACE_RE.sub(" ", raw_line).strip()
+            key = _heading_key(line)
+            if not line:
+                continue
+
+            if any(marker in key for marker in GENERIC_EUROLEAGUE_MARKERS):
+                euroleague_seen = True
+                in_points = False
+                lines_since_header = 0
+
+            if euroleague_seen and any(
+                marker in key for marker in GENERIC_PLAYER_POINTS_MARKERS
+            ):
+                in_points = True
+                odds_order = _generic_player_points_odds_order(key)
+                lines_since_header = 0
+                continue
+
+            if not in_points:
+                continue
+
+            if any(marker in key for marker in GENERIC_OTHER_PROP_MARKERS):
+                in_points = False
+                continue
+
+            offer = _parse_row(
+                line,
+                bookmaker=bookmaker,
+                page_number=page_number,
+                odds_order=odds_order,
+            )
+            if offer is not None:
+                offers.append(offer)
+                lines_since_header = 0
+                continue
+
+            lines_since_header += 1
+            if lines_since_header > 35:
+                in_points = False
+
+    return offers
+
+
+def parse_meridian_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
+    return parse_generic_euroleague_player_points_pages(pages, bookmaker="meridian")
+
+
+def parse_millennium_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
+    return parse_generic_euroleague_player_points_pages(pages, bookmaker="millennium")
+
