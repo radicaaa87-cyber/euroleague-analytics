@@ -440,9 +440,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamps=[row[index["game_tipoff_utc"]] for row in rows],
         eligible_mask=train_mask | validation_mask,
     )
-    validation_rows = [
-        row for row, selected in zip(rows, validation_mask, strict=True) if selected
-    ]
+    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
     volatility_index = feature_names.index("pre_l10_points_std")
     volatility_values = x[validation_mask, volatility_index]
     finite_volatility = volatility_values[np.isfinite(volatility_values)]
