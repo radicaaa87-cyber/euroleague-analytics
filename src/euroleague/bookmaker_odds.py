@@ -43,7 +43,7 @@ STARBET_OTHER_MARKERS = (
     "player blocks",
     "player steals",
 )
-MOZZART_SECTION_MARKERS = ("kosarka - igraci", "košarka - igrači")
+MOZZART_SECTION_MARKERS = ("kosarka igraci",)
 MOZZART_POINTS_MARKER = "broj poena igraca na mecu"
 
 
