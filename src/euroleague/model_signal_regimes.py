@@ -13,6 +13,7 @@ from collections import defaultdict
 from typing import Any
 
 import numpy as np
+
 SIGNAL_DOMAIN_ORDER = (
     "role_volume",
     "rotation",
