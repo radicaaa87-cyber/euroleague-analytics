@@ -198,6 +198,132 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         join player_lineup_summary l
           using (season_code, gamecode, player_id)
     ),
+    player_teammate_possession_game as (
+        select
+            p.season_code,
+            p.gamecode,
+            target.player_id,
+            teammate.player_id as teammate_id,
+            count(*) as shared_offensive_possessions
+        from v_possession p
+        join requested_seasons rs using (season_code)
+        join v_lineup_player target
+          on target.lineup_id = p.offense_lineup_id
+        join v_lineup_player teammate
+          on teammate.lineup_id = p.offense_lineup_id
+         and teammate.player_id <> target.player_id
+        where not p.excluded_by_default
+        group by 1, 2, 3, 4
+    ),
+    player_teammate_fga_game as (
+        select
+            e.season_code,
+            e.gamecode,
+            e.player_id,
+            teammate.player_id as teammate_id,
+            count(*) as shared_fga
+        from game_event e
+        join requested_seasons rs using (season_code)
+        join v_game g
+          on g.season_code = e.season_code
+         and g.gamecode = e.gamecode
+        join v_lineup_player teammate
+          on teammate.lineup_id = case
+                when e.codeteam = g.home_team_code then e.home_lineup_id
+                else e.away_lineup_id
+             end
+         and teammate.player_id <> e.player_id
+        where e.playtype in ('2FGM', '2FGA', '3FGM', '3FGA')
+          and e.player_id is not null
+          and e.codeteam is not null
+          and not g.excluded_by_default
+        group by 1, 2, 3, 4
+    ),
+    player_teammate_on_off_game as (
+        select
+            pp.season_code,
+            pp.gamecode,
+            pp.player_id,
+            pp.teammate_id,
+            pp.shared_offensive_possessions,
+            greatest(
+                coalesce(pg.pbp_offensive_possessions, 0)
+                    - pp.shared_offensive_possessions,
+                0
+            ) as teammate_off_offensive_possessions,
+            coalesce(pfga.shared_fga, 0) as shared_fga,
+            greatest(
+                coalesce(vpg.field_goals_attempted, 0)
+                    - coalesce(pfga.shared_fga, 0),
+                0
+            ) as teammate_off_fga,
+            round(
+                100.0 * coalesce(pfga.shared_fga, 0)
+                    / nullif(pp.shared_offensive_possessions, 0),
+                4
+            ) as teammate_on_fga_per_100,
+            round(
+                100.0 * greatest(
+                    coalesce(vpg.field_goals_attempted, 0)
+                        - coalesce(pfga.shared_fga, 0),
+                    0
+                )
+                    / nullif(
+                        greatest(
+                            coalesce(pg.pbp_offensive_possessions, 0)
+                                - pp.shared_offensive_possessions,
+                            0
+                        ),
+                        0
+                    ),
+                4
+            ) as teammate_off_fga_per_100
+        from player_teammate_possession_game pp
+        join v_player_game vpg
+          on vpg.season_code = pp.season_code
+         and vpg.gamecode = pp.gamecode
+         and vpg.player_id = pp.player_id
+        left join pbp_possession_game pg
+          on pg.season_code = pp.season_code
+         and pg.gamecode = pp.gamecode
+         and pg.player_id = pp.player_id
+        left join player_teammate_fga_game pfga
+          on pfga.season_code = pp.season_code
+         and pfga.gamecode = pp.gamecode
+         and pfga.player_id = pp.player_id
+         and pfga.teammate_id = pp.teammate_id
+        where not vpg.excluded_by_default
+    ),
+    player_role2_on_off_game as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            count(*) filter (
+                where shared_offensive_possessions >= 5
+                  and teammate_off_offensive_possessions >= 5
+            ) as role2_teammate_contexts,
+            round(
+                avg(
+                    teammate_off_fga_per_100 - teammate_on_fga_per_100
+                ) filter (
+                    where shared_offensive_possessions >= 5
+                      and teammate_off_offensive_possessions >= 5
+                ),
+                4
+            ) as role2_mean_teammate_off_fga_uplift,
+            round(
+                max(
+                    teammate_off_fga_per_100 - teammate_on_fga_per_100
+                ) filter (
+                    where shared_offensive_possessions >= 5
+                      and teammate_off_offensive_possessions >= 5
+                ),
+                4
+            ) as role2_max_teammate_off_fga_uplift
+        from player_teammate_on_off_game
+        group by 1, 2, 3
+    ),
     player_lineup_ranked as (
         select
             pls.season_code,
@@ -905,6 +1031,45 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             coalesce(pg.pbp_points_for, 0) as pbp_points_for,
             coalesce(pg.pbp_points_against, 0) as pbp_points_against,
 
+            round(
+                100.0 * p.field_goals_attempted::numeric
+                    / nullif(pg.pbp_offensive_possessions, 0),
+                4
+            ) as role2_fga_per_100_possessions,
+            round(
+                100.0 * (
+                    p.field_goals_attempted::numeric
+                    + 0.44 * p.free_throws_attempted::numeric
+                ) / nullif(pg.pbp_offensive_possessions, 0),
+                4
+            ) as role2_scoring_opportunities_per_100,
+            round(
+                p.field_goals_attempted::numeric
+                    / nullif(tg.field_goals_attempted, 0),
+                4
+            ) as role2_team_fga_share,
+            round(
+                (
+                    p.field_goals_attempted::numeric
+                    + 0.44 * p.free_throws_attempted::numeric
+                ) / nullif(
+                    tg.field_goals_attempted::numeric
+                        + 0.44 * tg.free_throws_attempted::numeric,
+                    0
+                ),
+                4
+            ) as role2_team_scoring_opportunity_share,
+            dense_rank() over (
+                partition by p.season_code, p.gamecode, p.team_code
+                order by (
+                    p.field_goals_attempted::numeric
+                    + 0.44 * p.free_throws_attempted::numeric
+                ) desc, p.player_id
+            ) as role2_option_rank,
+            coalesce(r2.role2_teammate_contexts, 0) as role2_teammate_contexts,
+            r2.role2_mean_teammate_off_fga_uplift,
+            r2.role2_max_teammate_off_fga_uplift,
+
             coalesce(sg.pbp_stint_count, 0) as pbp_stint_count,
             sg.pbp_avg_stint_seconds,
             sg.pbp_max_stint_seconds,
@@ -956,6 +1121,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on sg.season_code = p.season_code
          and sg.gamecode = p.gamecode
          and sg.player_id = p.player_id
+        left join player_role2_on_off_game r2
+          on r2.season_code = p.season_code
+         and r2.gamecode = p.gamecode
+         and r2.player_id = p.player_id
         left join player_top_pair_pregame pair
           on pair.season_code = p.season_code
          and pair.gamecode = p.gamecode
@@ -1756,7 +1925,63 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             round(avg(pbp_max_stint_seconds::numeric) over w5, 3)
                 as pre_l5_pbp_max_stint_seconds,
             round(avg(pbp_primary_lineup_share) over w5, 4)
-                as pre_l5_pbp_primary_lineup_share
+                as pre_l5_pbp_primary_lineup_share,
+
+            lag(role2_fga_per_100_possessions) over wall
+                as pre_role2_last_fga_per_100_possessions,
+            round(avg(role2_fga_per_100_possessions) over w3, 4)
+                as pre_role2_l3_fga_per_100_possessions,
+            round(avg(role2_fga_per_100_possessions) over w5, 4)
+                as pre_role2_l5_fga_per_100_possessions,
+            round(avg(role2_fga_per_100_possessions) over w10, 4)
+                as pre_role2_l10_fga_per_100_possessions,
+            round(
+                avg(role2_fga_per_100_possessions) over w3
+                    - avg(role2_fga_per_100_possessions) over w10,
+                4
+            ) as pre_role2_fga_per_100_trend_l3_vs_l10,
+
+            lag(role2_scoring_opportunities_per_100) over wall
+                as pre_role2_last_scoring_opportunities_per_100,
+            round(avg(role2_scoring_opportunities_per_100) over w5, 4)
+                as pre_role2_l5_scoring_opportunities_per_100,
+            round(avg(role2_scoring_opportunities_per_100) over w10, 4)
+                as pre_role2_l10_scoring_opportunities_per_100,
+
+            round(avg(role2_team_fga_share) over w3, 4)
+                as pre_role2_l3_team_fga_share,
+            round(avg(role2_team_fga_share) over w5, 4)
+                as pre_role2_l5_team_fga_share,
+            round(avg(role2_team_fga_share) over w10, 4)
+                as pre_role2_l10_team_fga_share,
+            round(
+                avg(role2_team_fga_share) over w3
+                    - avg(role2_team_fga_share) over w10,
+                4
+            ) as pre_role2_team_fga_share_trend_l3_vs_l10,
+            round(avg(role2_team_scoring_opportunity_share) over w5, 4)
+                as pre_role2_l5_team_scoring_opportunity_share,
+
+            lag(role2_option_rank) over wall as pre_role2_last_option_rank,
+            round(avg(role2_option_rank::numeric) over w5, 3)
+                as pre_role2_l5_option_rank,
+            round(
+                avg(case when role2_option_rank = 1 then 1.0 else 0.0 end) over w5,
+                4
+            ) as pre_role2_l5_primary_option_rate,
+            round(
+                avg(case when role2_option_rank <= 2 then 1.0 else 0.0 end) over w5,
+                4
+            ) as pre_role2_l5_top2_option_rate,
+
+            round(avg(role2_teammate_contexts::numeric) over w5, 3)
+                as pre_role2_l5_teammate_contexts,
+            round(avg(role2_mean_teammate_off_fga_uplift) over w5, 4)
+                as pre_role2_l5_mean_teammate_off_fga_uplift,
+            round(avg(role2_max_teammate_off_fga_uplift) over w5, 4)
+                as pre_role2_l5_max_teammate_off_fga_uplift,
+            round(avg(role2_max_teammate_off_fga_uplift) over w10, 4)
+                as pre_role2_l10_max_teammate_off_fga_uplift
         from player_hand_events
         window
             wall as (
@@ -2282,6 +2507,28 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_pbp_avg_stint_seconds,
         pf.pre_l5_pbp_max_stint_seconds,
         pf.pre_l5_pbp_primary_lineup_share,
+
+        pf.pre_role2_last_fga_per_100_possessions,
+        pf.pre_role2_l3_fga_per_100_possessions,
+        pf.pre_role2_l5_fga_per_100_possessions,
+        pf.pre_role2_l10_fga_per_100_possessions,
+        pf.pre_role2_fga_per_100_trend_l3_vs_l10,
+        pf.pre_role2_last_scoring_opportunities_per_100,
+        pf.pre_role2_l5_scoring_opportunities_per_100,
+        pf.pre_role2_l10_scoring_opportunities_per_100,
+        pf.pre_role2_l3_team_fga_share,
+        pf.pre_role2_l5_team_fga_share,
+        pf.pre_role2_l10_team_fga_share,
+        pf.pre_role2_team_fga_share_trend_l3_vs_l10,
+        pf.pre_role2_l5_team_scoring_opportunity_share,
+        pf.pre_role2_last_option_rank,
+        pf.pre_role2_l5_option_rank,
+        pf.pre_role2_l5_primary_option_rate,
+        pf.pre_role2_l5_top2_option_rate,
+        pf.pre_role2_l5_teammate_contexts,
+        pf.pre_role2_l5_mean_teammate_off_fga_uplift,
+        pf.pre_role2_l5_max_teammate_off_fga_uplift,
+        pf.pre_role2_l10_max_teammate_off_fga_uplift,
 
         pf.pre_last_top_pair_shared_minutes,
         pf.pre_last_top_pair_net_rating,
