@@ -50,8 +50,7 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         raise ValueError("minutes_basis must be one of: official, corrected, raw") from exc
 
     previous_venue = (
-        "case when role_prev_is_home then role_prev_team_code "
-        "else role_prev_opponent_team_code end"
+        "case when role_prev_is_home then role_prev_team_code else role_prev_opponent_team_code end"
     )
     current_venue = "case when is_home then team_code else opponent_team_code end"
     travel_km_sql = travel_distance_sql(previous_venue, current_venue)
