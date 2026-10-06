@@ -14,6 +14,7 @@ from typing import Any
 from euroleague.mcp import queries
 from euroleague.mcp.envelope import build_response
 from euroleague.mcp.resolve import resolve_player, resolve_season, resolve_team
+from euroleague.pregame_context import ROLE_CONTEXT_SQL
 
 
 def _iso_date(value: Any, name: str) -> str | None:
@@ -54,6 +55,15 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         raise ValueError("lookback must be between 10 and 20 games.")
 
     as_of_date = _iso_date(arguments.get("as_of_date"), "as_of_date")
+
+    target_gamecode: int | None = None
+    if arguments.get("gamecode") is not None:
+        try:
+            target_gamecode = int(arguments["gamecode"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("gamecode must be a positive integer.") from exc
+        if target_gamecode < 1:
+            raise ValueError("gamecode must be a positive integer.")
 
     conditions = [
         "p.season_code = %s",
@@ -339,8 +349,29 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         rows[0].update(pbp_rows[0])
 
     opponent_code: str | None = None
+
+    if target_gamecode is not None:
+        cursor.execute(
+            ROLE_CONTEXT_SQL,
+            {
+                "season_code": season_code,
+                "gamecode": target_gamecode,
+                "player_id": player_id,
+            },
+        )
+        context_rows = queries._rows(cursor)
+        context = context_rows[0] if context_rows else {}
+        if rows:
+            rows[0]["target_gamecode"] = target_gamecode
+            rows[0]["pregame_role_context"] = context
+        inferred_opponent = context.get("opponent_team_code")
+        if inferred_opponent:
+            opponent_code = str(inferred_opponent)
+
     if arguments.get("opponent"):
         opponent_code = resolve_team(cursor, season_code, arguments["opponent"])
+
+    if opponent_code is not None:
         opponent_conditions = ["season_code = %s", "team_code = %s"]
         opponent_params: list[Any] = [season_code, opponent_code]
         if not include_quarantined:
@@ -395,6 +426,11 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             "server-side; use el_get_play_by_play only for exceptional drill-down.",
             "When as_of_date is supplied, every rolling player and opponent statistic "
             "uses only games strictly before that date to prevent look-ahead leakage.",
+            "When gamecode is supplied, pregame_role_context is built only from evidence "
+            "published in the 72 hours before that game's tipoff. Availability, role and "
+            "vacated-minutes/FGA signals are severity- and source-confidence-weighted; this "
+            "forward context remains separate from historical blind-test training until the "
+            "timestamped archive is large enough to calibrate it safely.",
             "The bookmaker line is intentionally excluded. Produce the projection first, "
             "then calculate EDGE against the central line.",
         ],
