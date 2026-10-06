@@ -380,8 +380,9 @@ def build_registry(
             title="Compact pre-game player model context",
             description=(
                 "Start a player-points analysis here instead of chaining many box-score and "
-                "play-by-play calls. Returns one compact server-side bundle with L3/L5/L10 "
-                "minutes, points, FGA, 3PA and FTA, starter rates, per-minute rates, recent "
+                "play-by-play calls. Returns one compact server-side bundle with the "
+                "leakage-safe simple scoring baseline, L3/L5/L10 minutes, points, FGA, 3PA "
+                "and FTA, starter rates, per-minute rates, recent "
                 "game rows, plus full-PBP-derived on-court possessions, ratings, stint and "
                 "lineup-concentration signals, and optional opponent L5 profile. For an "
                 "upcoming game, supply gamecode to add leakage-safe 72h injury/availability "
