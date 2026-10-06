@@ -62,6 +62,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-season", default="E2024")
     parser.add_argument("--blind-season", default="E2025")
     parser.add_argument(
+        "--context-season",
+        action="append",
+        default=[],
+        help=(
+            "Historical context season used only to build pre-game features. "
+            "Repeat if needed; context rows are never train/validation targets."
+        ),
+    )
+    parser.add_argument(
         "--minutes-basis",
         default="official",
         choices=("official", "corrected", "raw"),
@@ -497,13 +506,21 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("train, validation and blind seasons must be different.")
 
     # Critical blind firewall: E2025 is named in metadata only and is NOT queried here.
-    seasons = [args.train_season, args.validation_season]
+    context_seasons = tuple(dict.fromkeys(args.context_season))
+    protected_seasons = {args.train_season, args.validation_season, args.blind_season}
+    overlap = sorted(set(context_seasons) & protected_seasons)
+    if overlap:
+        raise ValueError(
+            f"context seasons must differ from train/validation/blind seasons: {overlap}"
+        )
+
+    seasons = [*context_seasons, args.train_season, args.validation_season]
     columns, rows = _fetch_dataset(seasons, args.minutes_basis, args.min_history_games)
     if not rows:
         raise RuntimeError("Validation training query returned no rows.")
 
     train_columns, train_rows = _fetch_dataset(
-        [args.train_season],
+        [*context_seasons, args.train_season],
         args.minutes_basis,
         args.min_history_games,
     )
@@ -513,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         "feature_cutoff": cutoff_audit,
         "train_prefix_invariance": prefix_audit,
         "queried_seasons": seasons,
+        "context_seasons": list(context_seasons),
         "blind_season_queried": False,
     }
 
@@ -746,6 +764,7 @@ def main(argv: list[str] | None = None) -> int:
         "blind_test_opened": False,
         "blind_test_season": args.blind_season,
         "queried_seasons": seasons,
+        "context_seasons": list(context_seasons),
         "split": {
             "train": [args.train_season],
             "validation": [args.validation_season],
