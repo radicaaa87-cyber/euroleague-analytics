@@ -198,6 +198,262 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         join player_lineup_summary l
           using (season_code, gamecode, player_id)
     ),
+    player_lineup_ranked as (
+        select
+            pls.season_code,
+            pls.gamecode,
+            pls.player_id,
+            pls.lineup_id,
+            g.utc_date as game_tipoff_utc,
+            round(pls.lineup_seconds::numeric / 60.0, 3) as shared_minutes,
+            round(
+                100.0 * pls.lineup_team_points
+                    / nullif(pls.lineup_team_possessions, 0)
+                - 100.0 * pls.lineup_opponent_points
+                    / nullif(pls.lineup_opponent_possessions, 0),
+                3
+            ) as net_rating,
+            row_number() over (
+                partition by pls.season_code, pls.gamecode, pls.player_id
+                order by pls.lineup_seconds desc, pls.lineup_id
+            ) as combination_rank
+        from player_lineup_seconds pls
+        join v_game g
+          on g.season_code = pls.season_code
+         and g.gamecode = pls.gamecode
+    ),
+    player_top_lineup as (
+        select *
+        from player_lineup_ranked
+        where combination_rank = 1
+    ),
+    player_top_lineup_events as (
+        select
+            *,
+            case
+                when lag(lineup_id) over lineup_all = lineup_id then 1
+                else 0
+            end as repeat_event
+        from player_top_lineup
+        window lineup_all as (
+            partition by player_id
+            order by game_tipoff_utc, gamecode
+        )
+    ),
+    player_top_lineup_pregame as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            lag(shared_minutes) over lineup_all
+                as pre_last_top_lineup_shared_minutes,
+            lag(net_rating) over lineup_all
+                as pre_last_top_lineup_net_rating,
+            round(avg(shared_minutes) over lineup_w5, 3)
+                as pre_l5_top_lineup_shared_minutes,
+            round(avg(net_rating) over lineup_w5, 3)
+                as pre_l5_top_lineup_net_rating,
+            round(avg(repeat_event::numeric) over lineup_w5, 4)
+                as pre_l5_top_lineup_repeat_rate
+        from player_top_lineup_events
+        window
+            lineup_all as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+            ),
+            lineup_w5 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 5 preceding and 1 preceding
+            )
+    ),
+    player_pair_game as (
+        select
+            psr.season_code,
+            psr.gamecode,
+            psr.player_id,
+            teammate.player_id as teammate_id,
+            g.utc_date as game_tipoff_utc,
+            sum(psr.duration_seconds)::numeric as shared_seconds,
+            sum(psr.team_points) as team_points,
+            sum(psr.opponent_points) as opponent_points,
+            sum(psr.team_possessions) as team_possessions,
+            sum(psr.opponent_possessions) as opponent_possessions
+        from player_stint_rows psr
+        join v_lineup_player teammate
+          on teammate.lineup_id = psr.lineup_id
+         and teammate.player_id <> psr.player_id
+        join v_game g
+          on g.season_code = psr.season_code
+         and g.gamecode = psr.gamecode
+        group by
+            psr.season_code,
+            psr.gamecode,
+            psr.player_id,
+            teammate.player_id,
+            g.utc_date
+    ),
+    player_pair_ranked as (
+        select
+            *,
+            round(shared_seconds / 60.0, 3) as shared_minutes,
+            round(
+                100.0 * team_points / nullif(team_possessions, 0)
+                - 100.0 * opponent_points / nullif(opponent_possessions, 0),
+                3
+            ) as net_rating,
+            row_number() over (
+                partition by season_code, gamecode, player_id
+                order by shared_seconds desc, teammate_id
+            ) as combination_rank
+        from player_pair_game
+    ),
+    player_top_pair as (
+        select *
+        from player_pair_ranked
+        where combination_rank = 1
+    ),
+    player_top_pair_events as (
+        select
+            *,
+            case
+                when lag(teammate_id) over pair_all = teammate_id then 1
+                else 0
+            end as repeat_event
+        from player_top_pair
+        window pair_all as (
+            partition by player_id
+            order by game_tipoff_utc, gamecode
+        )
+    ),
+    player_top_pair_pregame as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            lag(shared_minutes) over pair_all
+                as pre_last_top_pair_shared_minutes,
+            lag(net_rating) over pair_all
+                as pre_last_top_pair_net_rating,
+            round(avg(shared_minutes) over pair_w5, 3)
+                as pre_l5_top_pair_shared_minutes,
+            round(avg(net_rating) over pair_w5, 3)
+                as pre_l5_top_pair_net_rating,
+            round(avg(repeat_event::numeric) over pair_w5, 4)
+                as pre_l5_top_pair_repeat_rate
+        from player_top_pair_events
+        window
+            pair_all as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+            ),
+            pair_w5 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 5 preceding and 1 preceding
+            )
+    ),
+    player_triple_game as (
+        select
+            psr.season_code,
+            psr.gamecode,
+            psr.player_id,
+            teammate_a.player_id as teammate_a_id,
+            teammate_b.player_id as teammate_b_id,
+            g.utc_date as game_tipoff_utc,
+            sum(psr.duration_seconds)::numeric as shared_seconds,
+            sum(psr.team_points) as team_points,
+            sum(psr.opponent_points) as opponent_points,
+            sum(psr.team_possessions) as team_possessions,
+            sum(psr.opponent_possessions) as opponent_possessions
+        from player_stint_rows psr
+        join v_lineup_player teammate_a
+          on teammate_a.lineup_id = psr.lineup_id
+         and teammate_a.player_id <> psr.player_id
+        join v_lineup_player teammate_b
+          on teammate_b.lineup_id = psr.lineup_id
+         and teammate_b.player_id <> psr.player_id
+         and teammate_a.player_id < teammate_b.player_id
+        join v_game g
+          on g.season_code = psr.season_code
+         and g.gamecode = psr.gamecode
+        group by
+            psr.season_code,
+            psr.gamecode,
+            psr.player_id,
+            teammate_a.player_id,
+            teammate_b.player_id,
+            g.utc_date
+    ),
+    player_triple_ranked as (
+        select
+            *,
+            round(shared_seconds / 60.0, 3) as shared_minutes,
+            round(
+                100.0 * team_points / nullif(team_possessions, 0)
+                - 100.0 * opponent_points / nullif(opponent_possessions, 0),
+                3
+            ) as net_rating,
+            row_number() over (
+                partition by season_code, gamecode, player_id
+                order by shared_seconds desc, teammate_a_id, teammate_b_id
+            ) as combination_rank
+        from player_triple_game
+    ),
+    player_top_triple as (
+        select *
+        from player_triple_ranked
+        where combination_rank = 1
+    ),
+    player_top_triple_events as (
+        select
+            *,
+            lag(teammate_a_id) over triple_all as previous_teammate_a_id,
+            lag(teammate_b_id) over triple_all as previous_teammate_b_id
+        from player_top_triple
+        window triple_all as (
+            partition by player_id
+            order by game_tipoff_utc, gamecode
+        )
+    ),
+    player_top_triple_repeat as (
+        select
+            *,
+            case
+                when previous_teammate_a_id = teammate_a_id
+                 and previous_teammate_b_id = teammate_b_id
+                    then 1
+                else 0
+            end as repeat_event
+        from player_top_triple_events
+    ),
+    player_top_triple_pregame as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            lag(shared_minutes) over triple_all
+                as pre_last_top_triple_shared_minutes,
+            lag(net_rating) over triple_all
+                as pre_last_top_triple_net_rating,
+            round(avg(shared_minutes) over triple_w5, 3)
+                as pre_l5_top_triple_shared_minutes,
+            round(avg(net_rating) over triple_w5, 3)
+                as pre_l5_top_triple_net_rating,
+            round(avg(repeat_event::numeric) over triple_w5, 4)
+                as pre_l5_top_triple_repeat_rate
+        from player_top_triple_repeat
+        window
+            triple_all as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+            ),
+            triple_w5 as (
+                partition by player_id
+                order by game_tipoff_utc, gamecode
+                rows between 5 preceding and 1 preceding
+            )
+    ),
     lineup_matchup_candidate as (
         select
             ls.season_code,
