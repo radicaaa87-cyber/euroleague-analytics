@@ -20,15 +20,6 @@ from typing import Any
 
 import numpy as np
 from sklearn.inspection import permutation_importance
-from train_player_points_ml import (
-    _as_float,
-    _fetch_dataset,
-    _finite_median,
-    _group_permutation_importance,
-    _metric_summary,
-    _season_mask,
-)
-
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
@@ -39,6 +30,15 @@ from euroleague.model_validation import (
     segment_stability_audit,
 )
 from euroleague.role_projection import role_base_projection
+
+from train_player_points_ml import (
+    _as_float,
+    _fetch_dataset,
+    _finite_median,
+    _group_permutation_importance,
+    _metric_summary,
+    _season_mask,
+)
 
 
 MIN_TRAIN_FEATURE_COVERAGE = 0.05
@@ -94,8 +94,8 @@ def _screen_training_features(
                 {
                     "feature": feature,
                     "reason": reason,
-                    "finite_rows": int(len(finite)),
-                    "train_rows": int(len(train_x)),
+                    "finite_rows": len(finite),
+                    "train_rows": len(train_x),
                 }
             )
 
@@ -174,7 +174,7 @@ def _benchmark_point_residual_stable(
                 fold_metrics.append(
                     {
                         "fold": fold_number,
-                        "rows": int(len(positions)),
+                        "rows": len(positions),
                         "model_mae": model_mae,
                         "naive_mae": naive_mae,
                         "mae_improvement_vs_naive": improvement,
