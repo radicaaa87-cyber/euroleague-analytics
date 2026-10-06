@@ -193,7 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         "match_sample": accepted[:20],
         "unresolved_sample": unresolved[: max(args.review_limit, 0)],
     }
-    rendered = json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2)
+    rendered = json.dumps(
+        summary,
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+        default=str,
+    )
     print(rendered)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
