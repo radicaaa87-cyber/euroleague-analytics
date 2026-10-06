@@ -76,19 +76,10 @@ def main() -> int:
             "group by season_code order by season_code",
             (list(SEASONS), 3),
         )
-        training_rows = {
-            str(season): int(count)
-            for season, count in cursor.fetchall()
-        }
-        missing_training = [
-            season for season in SEASONS
-            if training_rows.get(season, 0) <= 0
-        ]
+        training_rows = {str(season): int(count) for season, count in cursor.fetchall()}
+        missing_training = [season for season in SEASONS if training_rows.get(season, 0) <= 0]
         if missing_training:
-            raise RuntimeError(
-                "Training SQL returned no rows for: "
-                + ", ".join(missing_training)
-            )
+            raise RuntimeError("Training SQL returned no rows for: " + ", ".join(missing_training))
 
         cursor.execute("select count(*)::bigint from acb_player_game")
         acb_player_games = int(cursor.fetchone()[0])
@@ -97,9 +88,7 @@ def main() -> int:
                 "Compact ACB player-game context was not copied into the local warehouse."
             )
 
-        cursor.execute(
-            "select count(*)::bigint from pregame_context_collection"
-        )
+        cursor.execute("select count(*)::bigint from pregame_context_collection")
         context_collections = int(cursor.fetchone()[0])
 
     report.update(
