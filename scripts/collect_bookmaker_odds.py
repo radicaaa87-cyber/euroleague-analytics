@@ -603,7 +603,6 @@ def _insert_offer(
         return cursor.fetchone() is not None
 
 
-
 def _prepare_offer_rows(
     *,
     document_id: int,
