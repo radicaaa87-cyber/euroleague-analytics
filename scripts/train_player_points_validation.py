@@ -43,6 +43,8 @@ from euroleague.model_signal_regimes import (
     build_signal_fingerprints,
     _feature_column,
     classify_efficiency_cycles,
+    cold_context_feature_columns,
+    cold_context_temporal_stability,
     diagnostic_feature_columns,
     filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
@@ -80,6 +82,17 @@ PROGRESS_HARD_TIMEOUT_SECONDS = 1200
 MODEL10_PATTERN_OOF_BLOCKS = 4
 MODEL10_PATTERN_MIN_OCCURRENCES = 20
 MODEL10_PATTERN_PRIOR_STRENGTH = 20.0
+
+COLD_CONTEXT_MODEL_FAMILY = "hist_gradient_boosting"
+COLD_CONTEXT_MODEL_PARAMS = {
+    "learning_rate": 0.05,
+    "max_iter": 250,
+    "max_leaf_nodes": 15,
+    "min_samples_leaf": 20,
+    "l2_regularization": 2.0,
+}
+COLD_CONTEXT_MIN_TRAIN_ROWS = 80
+COLD_CONTEXT_MIN_BLOCK_ROWS = 20
 
 _PROGRESS_LOCK = threading.Lock()
 _PROGRESS_PHASE = "startup"
@@ -657,6 +670,120 @@ def _training_signal_oof_history(
     }
 
 
+def _fit_cold_context_adjustment(
+    *,
+    x: np.ndarray,
+    feature_names: list[str],
+    validation_mask: np.ndarray,
+    training_signal_oof: dict[str, Any],
+) -> dict[str, Any]:
+    """Learn a cold-state residual model from E2023 chronological OOF history only."""
+    context_features = cold_context_feature_columns(feature_names)
+    feature_positions = [feature_names.index(name) for name in context_features]
+    oof_indices = np.asarray(training_signal_oof["indices"], dtype=int)
+    temporal_blocks = np.asarray(training_signal_oof["temporal_blocks"], dtype=int)
+    oof_actual = np.asarray(training_signal_oof["actual"], dtype=float)
+    oof_predicted = np.asarray(training_signal_oof["predicted"], dtype=float)
+    oof_residual = oof_actual - oof_predicted
+
+    empty_validation = np.zeros(int(np.sum(validation_mask)), dtype=float)
+    if not len(oof_indices) or not context_features:
+        return {
+            "active": False,
+            "model": None,
+            "features": context_features,
+            "training_cold_rows": 0,
+            "temporal_stability": {"passed": False, "eligible_blocks": 0, "blocks": []},
+            "validation_cold_rows": 0,
+            "validation_delta": empty_validation,
+            "reason": "insufficient_oof_or_features",
+        }
+
+    oof_x = x[oof_indices][:, feature_positions]
+    oof_hand = _feature_column(
+        x[oof_indices],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    oof_cold = oof_hand < 0.0
+
+    if int(np.sum(oof_cold)) < COLD_CONTEXT_MIN_TRAIN_ROWS:
+        return {
+            "active": False,
+            "model": None,
+            "features": context_features,
+            "training_cold_rows": int(np.sum(oof_cold)),
+            "temporal_stability": {"passed": False, "eligible_blocks": 0, "blocks": []},
+            "validation_cold_rows": 0,
+            "validation_delta": empty_validation,
+            "reason": "insufficient_cold_training_rows",
+        }
+
+    temporal_residual: list[float] = []
+    temporal_correction: list[float] = []
+    temporal_eval_blocks: list[int] = []
+    unique_blocks = sorted(set(int(value) for value in temporal_blocks[oof_cold]))
+
+    for block in unique_blocks[1:]:
+        history_mask = oof_cold & (temporal_blocks < block)
+        evaluation_mask = oof_cold & (temporal_blocks == block)
+        if (
+            int(np.sum(history_mask)) < COLD_CONTEXT_MIN_TRAIN_ROWS
+            or int(np.sum(evaluation_mask)) < COLD_CONTEXT_MIN_BLOCK_ROWS
+        ):
+            continue
+
+        model = build_model(COLD_CONTEXT_MODEL_FAMILY, COLD_CONTEXT_MODEL_PARAMS)
+        model.fit(oof_x[history_mask], oof_residual[history_mask])
+        correction = np.asarray(model.predict(oof_x[evaluation_mask]), dtype=float)
+
+        temporal_residual.extend(float(value) for value in oof_residual[evaluation_mask])
+        temporal_correction.extend(float(value) for value in correction)
+        temporal_eval_blocks.extend([block] * int(np.sum(evaluation_mask)))
+
+    if temporal_residual:
+        temporal_stability = cold_context_temporal_stability(
+            residual=np.asarray(temporal_residual, dtype=float),
+            correction=np.asarray(temporal_correction, dtype=float),
+            temporal_blocks=temporal_eval_blocks,
+            min_block_rows=COLD_CONTEXT_MIN_BLOCK_ROWS,
+        )
+    else:
+        temporal_stability = {"passed": False, "eligible_blocks": 0, "blocks": []}
+
+    final_model = build_model(COLD_CONTEXT_MODEL_FAMILY, COLD_CONTEXT_MODEL_PARAMS)
+    final_model.fit(oof_x[oof_cold], oof_residual[oof_cold])
+
+    validation_hand = _feature_column(
+        x[validation_mask],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    validation_cold = validation_hand < 0.0
+    validation_delta = empty_validation.copy()
+    if bool(temporal_stability["passed"]) and np.any(validation_cold):
+        validation_x = x[validation_mask][:, feature_positions]
+        validation_delta[validation_cold] = np.asarray(
+            final_model.predict(validation_x[validation_cold]),
+            dtype=float,
+        )
+
+    return {
+        "active": bool(temporal_stability["passed"]),
+        "model": final_model,
+        "family": COLD_CONTEXT_MODEL_FAMILY,
+        "params": COLD_CONTEXT_MODEL_PARAMS,
+        "features": context_features,
+        "training_cold_rows": int(np.sum(oof_cold)),
+        "temporal_stability": temporal_stability,
+        "validation_cold_rows": int(np.sum(validation_cold)),
+        "validation_delta": validation_delta,
+        "reason": None if temporal_stability["passed"] else "temporal_stability_failed",
+    }
+
+
 def _benchmark_validation_target(
     x: np.ndarray,
     y: np.ndarray,
@@ -813,6 +940,8 @@ def _write_validation_predictions(
     predicted: np.ndarray,
     calibrated_predicted: np.ndarray,
     efficiency_adjusted_predicted: np.ndarray,
+    cold_context_adjusted_predicted: np.ndarray,
+    cold_context_correction: np.ndarray,
     signal_fingerprints: list[dict[str, Any]],
     signal_contributions: dict[str, np.ndarray],
     learned_pattern_effects: dict[str, dict[str, Any]],
@@ -847,6 +976,8 @@ def _write_validation_predictions(
         "predicted_points",
         "calibrated_predicted_points",
         "efficiency_adjusted_predicted_points",
+        "cold_context_adjusted_predicted_points",
+        "cold_context_correction_points",
         "pattern_calibration_correction_points",
         "pattern_stable_direction",
         "pattern_temporal_stability_passed",
@@ -879,6 +1010,8 @@ def _write_validation_predictions(
                 "predicted_points",
                 "calibrated_predicted_points",
                 "efficiency_adjusted_predicted_points",
+                "cold_context_adjusted_predicted_points",
+                "cold_context_correction_points",
                 "pattern_calibration_correction_points",
                 "pattern_stable_direction",
                 "pattern_temporal_stability_passed",
@@ -913,6 +1046,8 @@ def _write_validation_predictions(
             y_pred,
             calibrated_y_pred,
             efficiency_y_pred,
+            cold_context_y_pred,
+            cold_correction,
             signal_row,
             cycle_label,
         ) in enumerate(
@@ -923,6 +1058,8 @@ def _write_validation_predictions(
                 predicted,
                 calibrated_predicted,
                 efficiency_adjusted_predicted,
+                cold_context_adjusted_predicted,
+                cold_context_correction,
                 signal_fingerprints,
                 efficiency_cycle_labels,
                 strict=True,
@@ -944,6 +1081,8 @@ def _write_validation_predictions(
                 "predicted_points": round(float(y_pred), 4),
                 "calibrated_predicted_points": round(float(calibrated_y_pred), 4),
                 "efficiency_adjusted_predicted_points": round(float(efficiency_y_pred), 4),
+                "cold_context_adjusted_predicted_points": round(float(cold_context_y_pred), 4),
+                "cold_context_correction_points": round(float(cold_correction), 4),
                 "pattern_calibration_correction_points": round(pattern_correction, 4),
                 "pattern_stable_direction": bool(
                     learned_pattern and learned_pattern.get("stable_direction")
@@ -1241,6 +1380,47 @@ def main(argv: list[str] | None = None) -> int:
         y[validation_mask],
         calibrated_validation_prediction,
     )
+
+    _set_progress("model10_cold_context")
+    cold_context = _fit_cold_context_adjustment(
+        x=x,
+        feature_names=feature_names,
+        validation_mask=validation_mask,
+        training_signal_oof=training_signal_oof,
+    )
+    cold_context_adjusted_prediction = (
+        validation_prediction + np.asarray(cold_context["validation_delta"], dtype=float)
+    )
+    cold_context_adjusted_metrics = _metric_summary(
+        y[validation_mask],
+        cold_context_adjusted_prediction,
+    )
+    validation_hand_state = _feature_column(
+        x[validation_mask],
+        feature_names,
+        "pre_last_hand_state",
+        default=0.0,
+    )
+    validation_cold_mask = validation_hand_state < 0.0
+    cold_context_validation_metrics = {
+        "rows": int(np.sum(validation_cold_mask)),
+        "base": (
+            _metric_summary(
+                y[validation_mask][validation_cold_mask],
+                validation_prediction[validation_cold_mask],
+            )
+            if np.any(validation_cold_mask)
+            else None
+        ),
+        "adjusted": (
+            _metric_summary(
+                y[validation_mask][validation_cold_mask],
+                cold_context_adjusted_prediction[validation_cold_mask],
+            )
+            if np.any(validation_cold_mask)
+            else None
+        ),
+    }
 
     _set_progress("model10_efficiency_cycle")
     training_efficiency_cycle_labels = [
@@ -1603,6 +1783,21 @@ def main(argv: list[str] | None = None) -> int:
         "validation_points": validation_metrics,
         "naive_points_baseline": naive_metrics,
         "role_base_points": role_base_metrics,
+        "cold_context_model": {
+            "active": cold_context["active"],
+            "family": cold_context.get("family"),
+            "params": cold_context.get("params"),
+            "features": cold_context["features"],
+            "training_cold_rows": cold_context["training_cold_rows"],
+            "temporal_stability": cold_context["temporal_stability"],
+            "validation_cold_rows": cold_context["validation_cold_rows"],
+            "validation_all_rows_after_adjustment": cold_context_adjusted_metrics,
+            "validation_cold_rows_metrics": cold_context_validation_metrics,
+            "rule": (
+                "Cold context learns residual direction and magnitude from E2023 "
+                "chronological OOF rows only; no manual point modifier is assigned."
+            ),
+        },
         "auxiliary_targets": {
             "minutes": {
                 "validation_leaderboard": minutes_result["validation_leaderboard"],
@@ -1703,6 +1898,12 @@ def main(argv: list[str] | None = None) -> int:
                 "pattern_calibration_effects": learned_pattern_effects,
                 "pattern_calibration_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
                 "pattern_calibration_prior_strength": MODEL10_PATTERN_PRIOR_STRENGTH,
+                "cold_context_model": cold_context["model"],
+                "cold_context_model_family": cold_context.get("family"),
+                "cold_context_model_params": cold_context.get("params"),
+                "cold_context_features": cold_context["features"],
+                "cold_context_temporal_stability": cold_context["temporal_stability"],
+                "cold_context_active": cold_context["active"],
                 "regime_gate_model": regime_gate["model"],
                 "regime_gate_features": regime_gate["features"],
                 "regime_gate_q25_abs_residual": regime_gate["train_q25_abs_residual"],
@@ -1731,6 +1932,8 @@ def main(argv: list[str] | None = None) -> int:
         validation_prediction,
         calibrated_validation_prediction,
         efficiency_cycle_adjusted_prediction,
+        cold_context_adjusted_prediction,
+        np.asarray(cold_context["validation_delta"], dtype=float),
         signal_fingerprints,
         signal_contributions,
         learned_pattern_effects,
@@ -1760,6 +1963,20 @@ def main(argv: list[str] | None = None) -> int:
     print(f"regime_gate={json.dumps(report['regime_gate'], sort_keys=True)}")
     print("matchup_adjustment=" + json.dumps(report["matchup_adjustment"], sort_keys=True))
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
+    print(
+        "model10_cold_context="
+        + json.dumps(
+            {
+                "active": cold_context["active"],
+                "training_cold_rows": cold_context["training_cold_rows"],
+                "temporal_stability": cold_context["temporal_stability"],
+                "validation_cold_rows": cold_context["validation_cold_rows"],
+                "validation_all_rows_after_adjustment": cold_context_adjusted_metrics,
+                "validation_cold_rows_metrics": cold_context_validation_metrics,
+            },
+            sort_keys=True,
+        )
+    )
     print(
         "model10_efficiency_cycle="
         + json.dumps(
