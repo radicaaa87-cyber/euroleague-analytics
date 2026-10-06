@@ -86,10 +86,7 @@ class DiscoveredDocument:
     def archive_url(self) -> str | None:
         if not self.archive_timestamp:
             return None
-        return (
-            "https://web.archive.org/web/"
-            f"{self.archive_timestamp}id_/{self.canonical_url}"
-        )
+        return f"https://web.archive.org/web/{self.archive_timestamp}id_/{self.canonical_url}"
 
 
 def _date_arg(value: str) -> date:
