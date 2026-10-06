@@ -38,10 +38,14 @@ from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_pref
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
 from euroleague.model_signal_regimes import (
     ablation_signal_contributions,
+    apply_efficiency_cycle_effects,
     apply_pattern_effects,
     build_signal_fingerprints,
+    classify_efficiency_cycles,
+    learn_efficiency_cycle_effects,
     learn_pattern_effects,
     signal_domain_columns,
+    summarize_efficiency_cycles,
     summarize_pattern_stability,
     summarize_repeating_patterns,
     summarize_signal_tiers,
@@ -1065,6 +1069,47 @@ def main(argv: list[str] | None = None) -> int:
         calibrated_validation_prediction,
     )
 
+    _set_progress("model10_efficiency_cycle")
+    all_efficiency_cycle_labels = classify_efficiency_cycles(
+        x=x,
+        feature_names=feature_names,
+    )
+    training_efficiency_cycle_labels = [
+        all_efficiency_cycle_labels[int(position)]
+        for position in training_signal_oof["indices"]
+    ]
+    learned_efficiency_cycle_effects = learn_efficiency_cycle_effects(
+        actual=training_signal_oof["actual"],
+        predicted=training_signal_oof["predicted"],
+        labels=training_efficiency_cycle_labels,
+        min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
+        prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
+    )
+    validation_efficiency_cycle_labels = [
+        label
+        for label, selected in zip(
+            all_efficiency_cycle_labels,
+            validation_mask,
+            strict=True,
+        )
+        if selected
+    ]
+    efficiency_cycle_summary = summarize_efficiency_cycles(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        labels=validation_efficiency_cycle_labels,
+    )
+    efficiency_cycle_adjusted_prediction = apply_efficiency_cycle_effects(
+        predicted=validation_prediction,
+        labels=validation_efficiency_cycle_labels,
+        learned_effects=learned_efficiency_cycle_effects,
+    )
+    efficiency_cycle_adjusted_metrics = _metric_summary(
+        y[validation_mask],
+        efficiency_cycle_adjusted_prediction,
+    )
+
     minutes_y = np.asarray([float(row[index["target_minutes"]]) for row in rows], dtype=float)
     fga_y = np.asarray([float(row[index["target_fga"]]) for row in rows], dtype=float)
     three_pa_y = np.asarray([float(row[index["target_3pa"]]) for row in rows], dtype=float)
@@ -1326,6 +1371,28 @@ def main(argv: list[str] | None = None) -> int:
             "repeating_patterns": repeating_signal_patterns,
             "pattern_stability_min_occurrences": MODEL10_PATTERN_MIN_OCCURRENCES,
             "pattern_stability": pattern_stability,
+            "efficiency_cycle_modifier": {
+                "status": "TRAIN_ONLY_OOF_CANDIDATE",
+                "states": (
+                    "hot_start, hot_mature, hot_regression_risk, "
+                    "hot_cooling_decline, cold_decline, "
+                    "cold_efficiency_only, cold_recovery, neutral"
+                ),
+                "training_source": args.train_season,
+                "training_method": "chronological_out_of_fold_residuals",
+                "learned_effects": learned_efficiency_cycle_effects,
+                "validation_summary": efficiency_cycle_summary,
+                "validation_metrics_after_modifier": efficiency_cycle_adjusted_metrics,
+                "validation_mae_change_vs_base": (
+                    efficiency_cycle_adjusted_metrics["mae"] - validation_metrics["mae"]
+                ),
+                "interpretation": (
+                    "Hot/cold is treated as a phase modifier, not an independent "
+                    "signal count. Mature/extreme hot states can learn a negative "
+                    "modifier when E2023 OOF residuals show regression; cold states "
+                    "with falling FGA/minutes are separated from efficiency-only cold."
+                ),
+            },
             "training_only_pattern_calibration": {
                 "source_season": args.train_season,
                 "method": "chronological_out_of_fold",
@@ -1494,6 +1561,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"regime_gate={json.dumps(report['regime_gate'], sort_keys=True)}")
     print("matchup_adjustment=" + json.dumps(report["matchup_adjustment"], sort_keys=True))
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
+    print(
+        "model10_efficiency_cycle="
+        + json.dumps(
+            {
+                "learned_effects": learned_efficiency_cycle_effects,
+                "validation_summary": efficiency_cycle_summary,
+                "validation_metrics_after_modifier": efficiency_cycle_adjusted_metrics,
+            },
+            sort_keys=True,
+        )
+    )
     print(
         "model10_pattern_calibration="
         + json.dumps(
