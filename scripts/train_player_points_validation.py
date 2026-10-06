@@ -36,6 +36,13 @@ from train_player_points_ml import (
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
+from euroleague.model_signal_regimes import (
+    ablation_signal_contributions,
+    build_signal_fingerprints,
+    signal_domain_columns,
+    summarize_repeating_patterns,
+    summarize_signal_tiers,
+)
 from euroleague.model_training import model_feature_columns
 from euroleague.model_validation import (
     placebo_target_audit,
@@ -657,6 +664,7 @@ def _write_validation_predictions(
     actual: np.ndarray,
     naive: np.ndarray,
     predicted: np.ndarray,
+    signal_fingerprints: list[dict[str, Any]],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = (
@@ -679,14 +687,20 @@ def _write_validation_predictions(
                 "predicted_points",
                 "prediction_error",
                 "absolute_error",
+                "signal_tier",
+                "supporting_signal_count",
+                "situation_fingerprint",
+                "supporting_domains",
+                "opposing_domains",
             ],
         )
         writer.writeheader()
-        for row, y_true, baseline, y_pred in zip(
+        for row, y_true, baseline, y_pred, signal_row in zip(
             validation_rows,
             actual,
             naive,
             predicted,
+            signal_fingerprints,
             strict=True,
         ):
             writer.writerow(
@@ -697,6 +711,11 @@ def _write_validation_predictions(
                     "predicted_points": round(float(y_pred), 4),
                     "prediction_error": round(float(y_pred - y_true), 4),
                     "absolute_error": round(float(abs(y_pred - y_true)), 4),
+                    "signal_tier": signal_row["signal_tier"],
+                    "supporting_signal_count": signal_row["supporting_signal_count"],
+                    "situation_fingerprint": signal_row["fingerprint"],
+                    "supporting_domains": "|".join(signal_row["supporting_domains"]),
+                    "opposing_domains": "|".join(signal_row["opposing_domains"]),
                 }
             )
 
@@ -821,6 +840,45 @@ def main(argv: list[str] | None = None) -> int:
     validation_delta = point_result["validation_prediction"]
     validation_naive = naive[validation_mask]
     validation_prediction = validation_naive + validation_delta
+
+    _set_progress("situation_signal_attribution")
+    signal_contributions = ablation_signal_contributions(
+        model=point_result["model"],
+        reference_x=x[train_mask],
+        evaluation_x=x[validation_mask],
+        feature_names=feature_names,
+        residual_scale=point_result["selected"]["residual_shrinkage"],
+        row_gate=point_result["selected_regime_gate"],
+    )
+    matchup_signal = (
+        np.asarray(matchup_adjustment["validation_delta"], dtype=float)
+        * point_result["selected"]["matchup_shrinkage"]
+    )
+    if "matchup_opponent" in signal_contributions:
+        signal_contributions["matchup_opponent"] = (
+            signal_contributions["matchup_opponent"] + matchup_signal
+        )
+    else:
+        signal_contributions["matchup_opponent"] = matchup_signal
+
+    signal_fingerprints = build_signal_fingerprints(
+        signal_contributions,
+        validation_delta,
+        contribution_floor_points=0.25,
+    )
+    signal_tier_summary = summarize_signal_tiers(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+    )
+    repeating_signal_patterns = summarize_repeating_patterns(
+        actual=y[validation_mask],
+        naive=validation_naive,
+        predicted=validation_prediction,
+        fingerprints=signal_fingerprints,
+        min_occurrences=3,
+    )
 
     minutes_y = np.asarray([float(row[index["target_minutes"]]) for row in rows], dtype=float)
     fga_y = np.asarray([float(row[index["target_fga"]]) for row in rows], dtype=float)
@@ -1072,6 +1130,23 @@ def main(argv: list[str] | None = None) -> int:
             "validation_delta_abs_mean": matchup_adjustment.get("validation_delta_abs_mean"),
             "selected_shrinkage": point_result["selected"]["matchup_shrinkage"],
         },
+        "model10_situation_signals": {
+            "status": "VALIDATION_DIAGNOSTIC_ONLY",
+            "contribution_floor_points": 0.25,
+            "domains": {
+                domain: [feature_names[position] for position in positions]
+                for domain, positions in signal_domain_columns(feature_names).items()
+            },
+            "tier_summary": signal_tier_summary,
+            "repeating_patterns_min_occurrences": 3,
+            "repeating_patterns": repeating_signal_patterns,
+            "interpretation": (
+                "Signal tiers count independent basketball situation domains whose "
+                "ablation contribution supports the model correction. Repeated-pattern "
+                "hit rates measure correction direction versus the naive projection; "
+                "they are not bookmaker-line betting hit rates."
+            ),
+        },
         "validation_temporal_stability": {
             "positive_folds": point_result["selected"]["positive_folds"],
             "median_fold_mae_improvement_vs_naive": point_result["selected"][
@@ -1196,6 +1271,7 @@ def main(argv: list[str] | None = None) -> int:
         y[validation_mask],
         validation_naive,
         validation_prediction,
+        signal_fingerprints,
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
