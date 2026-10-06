@@ -42,6 +42,7 @@ from euroleague.model_signal_regimes import (
     apply_pattern_effects,
     build_signal_fingerprints,
     classify_efficiency_cycles,
+    filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
     learn_pattern_effects,
     signal_domain_columns,
@@ -611,6 +612,16 @@ def _training_signal_oof_history(
         else:
             contributions["matchup_opponent"] = matchup_signal
 
+        efficiency_labels = classify_efficiency_cycles(
+            x=x[evaluation_mask],
+            feature_names=feature_names,
+        )
+        contributions = filter_noisy_signal_contributions(
+            contributions=contributions,
+            x=x[evaluation_mask],
+            feature_names=feature_names,
+            efficiency_labels=efficiency_labels,
+        )
         fingerprints = build_signal_fingerprints(
             contributions,
             delta,
@@ -984,6 +995,20 @@ def main(argv: list[str] | None = None) -> int:
     validation_naive = naive[validation_mask]
     validation_prediction = validation_naive + validation_delta
 
+    all_efficiency_cycle_labels = classify_efficiency_cycles(
+        x=x,
+        feature_names=feature_names,
+    )
+    validation_efficiency_cycle_labels = [
+        label
+        for label, selected in zip(
+            all_efficiency_cycle_labels,
+            validation_mask,
+            strict=True,
+        )
+        if selected
+    ]
+
     _set_progress("situation_signal_attribution")
     signal_contributions = ablation_signal_contributions(
         model=point_result["model"],
@@ -1004,6 +1029,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         signal_contributions["matchup_opponent"] = matchup_signal
 
+    signal_contributions = filter_noisy_signal_contributions(
+        contributions=signal_contributions,
+        x=x[validation_mask],
+        feature_names=feature_names,
+        efficiency_labels=validation_efficiency_cycle_labels,
+    )
     signal_fingerprints = build_signal_fingerprints(
         signal_contributions,
         validation_delta,
@@ -1070,10 +1101,6 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     _set_progress("model10_efficiency_cycle")
-    all_efficiency_cycle_labels = classify_efficiency_cycles(
-        x=x,
-        feature_names=feature_names,
-    )
     training_efficiency_cycle_labels = [
         all_efficiency_cycle_labels[int(position)] for position in training_signal_oof["indices"]
     ]
@@ -1084,15 +1111,6 @@ def main(argv: list[str] | None = None) -> int:
         min_occurrences=MODEL10_PATTERN_MIN_OCCURRENCES,
         prior_strength=MODEL10_PATTERN_PRIOR_STRENGTH,
     )
-    validation_efficiency_cycle_labels = [
-        label
-        for label, selected in zip(
-            all_efficiency_cycle_labels,
-            validation_mask,
-            strict=True,
-        )
-        if selected
-    ]
     efficiency_cycle_summary = summarize_efficiency_cycles(
         actual=y[validation_mask],
         naive=validation_naive,
