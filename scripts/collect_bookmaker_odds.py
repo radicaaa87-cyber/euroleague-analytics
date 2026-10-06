@@ -302,10 +302,9 @@ def _extract_pages(payload: bytes) -> list[str]:
     reader = PdfReader(io.BytesIO(payload))
     pages: list[str] = []
     for page in reader.pages:
-        try:
-            text = page.extract_text(extraction_mode="layout") or ""
-        except TypeError:
-            text = page.extract_text() or ""
+        # The bookmaker parsers are line-oriented. Default extraction preserves
+        # logical reading order better than layout mode for multi-column odds PDFs.
+        text = page.extract_text() or ""
         pages.append(text)
     return pages
 
