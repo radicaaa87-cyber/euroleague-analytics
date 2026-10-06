@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import time as time_module
 import urllib.parse
 from collections.abc import Iterable
@@ -23,13 +24,15 @@ from euroleague.bookmaker_odds import (
     AthleteCandidate,
     ParsedOffer,
     infer_document_date,
+    parse_meridian_player_points_pages,
+    parse_millennium_player_points_pages,
     parse_mozzart_player_points_pages,
     parse_starbet_player_points_pages,
     resolve_participant,
 )
 from euroleague.config import DatabaseSettings
 
-COLLECTOR_VERSION = "bookmaker_archive_v1"
+COLLECTOR_VERSION = "bookmaker_archive_v2"
 USER_AGENT = "euroleague-analytics-bookmaker-archive/1.0"
 WAYBACK_CDX = "https://web.archive.org/cdx/search/cdx"
 BRAVE_SEARCH = "https://api.search.brave.com/res/v1/web/search"
@@ -63,6 +66,40 @@ BOOKMAKER_CONFIG: dict[str, dict[str, Any]] = {
             'site:mozzartbet.com filetype:pdf EVROLIGA "Broj poena igrača"',
             'site:mozzartbet.com filetype:pdf "KOSARKA - IGRAČI" EVROLIGA',
         ],
+        "seeds": [],
+    },
+    "meridian": {
+        "domains": {
+            "meridianbet.rs",
+            "www.meridianbet.rs",
+            "coupons.merbet.com",
+            "merbet.com",
+            "www.merbet.com",
+        },
+        "wayback_patterns": [
+            "coupons.merbet.com/*",
+            "meridianbet.rs/*",
+            "www.meridianbet.rs/*",
+        ],
+        "search_queries": [
+            'site:coupons.merbet.com filetype:pdf EVROLIGA "poeni igrača"',
+            'site:meridianbet.rs filetype:pdf EVROLIGA "poeni igrača"',
+            'site:meridianbet.rs filetype:pdf dopuna košarka EVROLIGA',
+        ],
+        "listing_pages": ["https://coupons.merbet.com/files"],
+        "seeds": [],
+    },
+    "millennium": {
+        "domains": {"millenniumbet.rs", "www.millenniumbet.rs"},
+        "wayback_patterns": [
+            "millenniumbet.rs/*",
+            "www.millenniumbet.rs/*",
+        ],
+        "search_queries": [
+            'site:millenniumbet.rs filetype:pdf EVROLIGA "poeni igrača"',
+            'site:millenniumbet.rs filetype:pdf dopuna košarka EVROLIGA',
+        ],
+        "listing_pages": [],
         "seeds": [],
     },
 }
@@ -188,6 +225,39 @@ def _discover_brave(
     return results
 
 
+PDF_REF_RE = re.compile(
+    r"""(?P<ref>(?:https?://)?[^"'<>\\s]+\.pdf(?:\?[^"'<>\\s]*)?)""",
+    re.IGNORECASE,
+)
+
+
+def _discover_listing_pages(
+    session: requests.Session,
+    bookmaker: str,
+) -> list[DiscoveredDocument]:
+    results: list[DiscoveredDocument] = []
+    for page_url in BOOKMAKER_CONFIG[bookmaker].get("listing_pages", []):
+        response = session.get(page_url, timeout=30)
+        response.raise_for_status()
+        body = response.text.replace("\\/", "/")
+        for match in PDF_REF_RE.finditer(body):
+            ref = match.group("ref").strip()
+            if ref.startswith("//"):
+                ref = "https:" + ref
+            url = _normalize_url(urllib.parse.urljoin(page_url, ref))
+            if not _allowed_document(bookmaker, url):
+                continue
+            results.append(
+                DiscoveredDocument(
+                    bookmaker=bookmaker,
+                    canonical_url=url,
+                    discovery_method="listing_page",
+                    title=ref.rsplit("/", 1)[-1],
+                )
+            )
+    return results
+
+
 def _discover_documents(
     session: requests.Session,
     bookmakers: list[str],
@@ -220,6 +290,9 @@ def _discover_documents(
                 )
             )
 
+        with contextlib.suppress(requests.RequestException, ValueError):
+            results.extend(_discover_listing_pages(session, bookmaker))
+
         api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
         if api_key:
             with contextlib.suppress(requests.RequestException, ValueError):
@@ -245,7 +318,13 @@ def _discover_documents(
                 break
 
     deduped: dict[tuple[str, str], DiscoveredDocument] = {}
-    priority = {"manual": 4, "brave_search": 3, "wayback_cdx": 2, "seed": 1}
+    priority = {
+        "manual": 5,
+        "listing_page": 4,
+        "brave_search": 3,
+        "wayback_cdx": 2,
+        "seed": 1,
+    }
     for item in results:
         key = (item.bookmaker, item.canonical_url)
         current = deduped.get(key)
@@ -314,6 +393,10 @@ def _parse_offers(bookmaker: str, pages: list[str]) -> list[ParsedOffer]:
         return parse_starbet_player_points_pages(pages)
     if bookmaker == "mozzart":
         return parse_mozzart_player_points_pages(pages)
+    if bookmaker == "meridian":
+        return parse_meridian_player_points_pages(pages)
+    if bookmaker == "millennium":
+        return parse_millennium_player_points_pages(pages)
     return []
 
 
@@ -586,8 +669,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--bookmakers",
-        default="mozzart,starbet",
-        help="Comma-separated: mozzart,starbet",
+        default="mozzart,starbet,meridian,millennium",
+        help="Comma-separated: mozzart,starbet,meridian,millennium",
     )
     parser.add_argument("--from-date", type=_date_arg, default=date(2024, 9, 1))
     parser.add_argument("--to-date", type=_date_arg, default=date.today())
