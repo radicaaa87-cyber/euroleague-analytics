@@ -193,11 +193,45 @@ def main() -> int:
             context_rows,
         )
 
+        collection_raw = _rows(
+            source,
+            """
+            select
+                season_code, gamecode, team_code, collected_at,
+                query_count, successful_query_count, failed_query_count,
+                players_queried, items_seen, inserted_event_count,
+                collector_version, metadata
+            from pregame_context_collection
+            where season_code in ('E2023', 'E2024', 'E2025')
+            order by season_code, gamecode, team_code, collected_at
+            """,
+        )
+        collection_rows = [
+            (*row[:11], Jsonb(row[11]))
+            for row in collection_raw
+        ]
+        collection_count = _executemany(
+            target,
+            """
+            insert into pregame_context_collection (
+                season_code, gamecode, team_code, collected_at,
+                query_count, successful_query_count, failed_query_count,
+                players_queried, items_seen, inserted_event_count,
+                collector_version, metadata
+            )
+            values (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            collection_rows,
+        )
+
     print(
         "training context copied: "
         f"athletes={athlete_count} identities={identity_count} "
         f"acb_games={acb_game_count} acb_player_games={acb_player_count} "
-        f"pregame_context={context_count}; acb_event=0"
+        f"pregame_context={context_count} pregame_collections={collection_count}; "
+        "acb_event=0"
     )
     return 0
 
