@@ -558,6 +558,96 @@ def apply_pattern_effects(
     return calibrated
 
 
+COLD_CONTEXT_FEATURE_CANDIDATES = (
+    "pre_cold_streak_games",
+    "pre_avg_cold_episode_games",
+    "pre_max_cold_episode_games",
+    "pre_last_ts_delta_vs_prior_l10",
+    "pre_ts_trend_l3_vs_l10",
+    "pre_minutes_trend_l3_vs_l10",
+    "pre_fga_trend_l3_vs_l10",
+    "pre_last_minutes_delta_vs_l10",
+    "pre_last_fga_delta_vs_l10",
+    "pre_l3_minutes",
+    "pre_l5_minutes",
+    "pre_l10_minutes",
+    "pre_l3_fga",
+    "pre_l5_fga",
+    "pre_l10_fga",
+    "pre_role2_fga_per_100_trend_l3_vs_l10",
+    "pre_role2_team_fga_share_trend_l3_vs_l10",
+    "pre_role2_l5_team_scoring_opportunity_share",
+    "pre_role2_l5_option_rank",
+    "pre_role2_l5_primary_option_rate",
+    "pre_role2_l5_top2_option_rate",
+)
+
+
+def cold_context_feature_columns(columns: list[str]) -> list[str]:
+    """Return pre-game context used to learn what a cold state means conditionally."""
+    available = set(columns)
+    return [name for name in COLD_CONTEXT_FEATURE_CANDIDATES if name in available]
+
+
+def cold_context_temporal_stability(
+    *,
+    residual: np.ndarray,
+    correction: np.ndarray,
+    temporal_blocks: list[Any] | np.ndarray,
+    min_block_rows: int = 20,
+) -> dict[str, Any]:
+    """Require a learned cold-context correction to improve every eligible time block."""
+    residual_values = np.asarray(residual, dtype=float)
+    correction_values = np.asarray(correction, dtype=float)
+    if len(residual_values) != len(correction_values) or len(temporal_blocks) != len(residual_values):
+        raise ValueError("residual, correction and temporal_blocks must align.")
+    if min_block_rows < 1:
+        raise ValueError("min_block_rows must be positive.")
+
+    block_rows: list[dict[str, Any]] = []
+    for block in sorted(set(str(value) for value in temporal_blocks)):
+        positions = np.asarray(
+            [index for index, value in enumerate(temporal_blocks) if str(value) == block],
+            dtype=int,
+        )
+        if len(positions) < min_block_rows:
+            continue
+        before = float(np.mean(np.abs(residual_values[positions])))
+        after = float(
+            np.mean(
+                np.abs(
+                    residual_values[positions]
+                    - correction_values[positions]
+                )
+            )
+        )
+        directional = float(
+            np.mean(
+                residual_values[positions] * correction_values[positions] > 0.0
+            )
+        )
+        block_rows.append(
+            {
+                "block": block,
+                "rows": len(positions),
+                "mae_before_points": before,
+                "mae_after_points": after,
+                "mae_improvement_points": before - after,
+                "directional_hit_rate": directional,
+            }
+        )
+
+    passed = bool(
+        len(block_rows) >= 2
+        and all(row["mae_improvement_points"] > 0.0 for row in block_rows)
+    )
+    return {
+        "passed": passed,
+        "eligible_blocks": len(block_rows),
+        "blocks": block_rows,
+    }
+
+
 def diagnostic_feature_columns(columns: list[str]) -> list[str]:
     """Return all pre-game diagnostic columns without target leakage."""
     return [
