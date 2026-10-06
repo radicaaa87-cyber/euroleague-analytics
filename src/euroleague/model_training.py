@@ -1445,6 +1445,123 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                     and interval '1 microsecond' preceding
             )
     ),
+    el_player_identity as (
+        select
+            source_player_id as player_id,
+            athlete_id
+        from athlete_source_identity
+        where source = 'EL'
+          and match_status in ('auto_link', 'manual_verified')
+    ),
+    acb_history_ranked as (
+        select
+            pf.season_code as target_season_code,
+            pf.gamecode as target_gamecode,
+            pf.player_id as target_player_id,
+            pf.game_tipoff_utc as target_tipoff_utc,
+            h.utc_date as acb_game_date,
+            h.source_game_id as acb_game_id,
+            h.minutes_seconds,
+            h.points,
+            h.field_goals_attempted,
+            h.is_starter,
+            row_number() over (
+                partition by pf.season_code, pf.gamecode, pf.player_id
+                order by h.utc_date desc, h.source_game_id desc
+            ) as acb_recency_rank
+        from player_features pf
+        join el_player_identity epi
+          on epi.player_id = pf.player_id
+        join v_athlete_game_history h
+          on h.athlete_id = epi.athlete_id
+         and h.source = 'ACB'
+         and not h.excluded_by_default
+         and h.utc_date < pf.game_tipoff_utc
+         and h.utc_date >= pf.game_tipoff_utc - interval '45 days'
+    ),
+    acb_features as (
+        select
+            target_season_code as season_code,
+            target_gamecode as gamecode,
+            target_player_id as player_id,
+            max(acb_game_date) as acb_feature_cutoff_time,
+            count(*) filter (where acb_recency_rank <= 5)
+                as pre_acb_l5_games,
+            round(
+                avg(minutes_seconds::numeric / 60.0)
+                    filter (where acb_recency_rank <= 3),
+                3
+            ) as pre_acb_l3_minutes,
+            round(
+                avg(minutes_seconds::numeric / 60.0)
+                    filter (where acb_recency_rank <= 5),
+                3
+            ) as pre_acb_l5_minutes,
+            round(
+                avg(field_goals_attempted::numeric)
+                    filter (where acb_recency_rank <= 3),
+                3
+            ) as pre_acb_l3_fga,
+            round(
+                avg(field_goals_attempted::numeric)
+                    filter (where acb_recency_rank <= 5),
+                3
+            ) as pre_acb_l5_fga,
+            round(
+                avg(points::numeric)
+                    filter (where acb_recency_rank <= 3),
+                3
+            ) as pre_acb_l3_points,
+            round(
+                avg(points::numeric)
+                    filter (where acb_recency_rank <= 5),
+                3
+            ) as pre_acb_l5_points,
+            round(
+                avg(case when is_starter then 1.0 else 0.0 end)
+                    filter (where acb_recency_rank <= 5),
+                4
+            ) as pre_acb_l5_starter_rate,
+            round(
+                60.0
+                * sum(points) filter (where acb_recency_rank <= 5)
+                / nullif(
+                    sum(minutes_seconds) filter (where acb_recency_rank <= 5),
+                    0
+                ),
+                4
+            ) as pre_acb_l5_points_per_minute,
+            round(
+                60.0
+                * sum(field_goals_attempted) filter (where acb_recency_rank <= 5)
+                / nullif(
+                    sum(minutes_seconds) filter (where acb_recency_rank <= 5),
+                    0
+                ),
+                4
+            ) as pre_acb_l5_fga_per_minute,
+            count(*) filter (
+                where acb_game_date >= target_tipoff_utc - interval '7 days'
+            ) as pre_acb_games_last_7d,
+            round(
+                sum(minutes_seconds::numeric / 60.0) filter (
+                    where acb_game_date >= target_tipoff_utc - interval '7 days'
+                ),
+                3
+            ) as pre_acb_minutes_last_7d,
+            round(
+                extract(
+                    epoch from (target_tipoff_utc - max(acb_game_date))
+                ) / 86400.0,
+                3
+            ) as pre_days_since_last_acb_game
+        from acb_history_ranked
+        group by
+            target_season_code,
+            target_gamecode,
+            target_player_id,
+            target_tipoff_utc
+    ),
     team_features as (
         select
             tg.season_code,
@@ -1481,7 +1598,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             tt.team_feature_cutoff_time,
             ot.team_feature_cutoff_time,
             ort.rotation_feature_cutoff_time,
-            opt.position_feature_cutoff_time
+            opt.position_feature_cutoff_time,
+            af.acb_feature_cutoff_time
         ) as feature_cutoff_time,
         pf.game_date,
         pf.player_id,
@@ -1620,6 +1738,50 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_pbp_max_stint_seconds,
         pf.pre_l5_pbp_primary_lineup_share,
 
+        af.pre_acb_l5_games,
+        af.pre_acb_l3_minutes,
+        af.pre_acb_l5_minutes,
+        af.pre_acb_l3_fga,
+        af.pre_acb_l5_fga,
+        af.pre_acb_l3_points,
+        af.pre_acb_l5_points,
+        af.pre_acb_l5_starter_rate,
+        af.pre_acb_l5_points_per_minute,
+        af.pre_acb_l5_fga_per_minute,
+        af.pre_acb_games_last_7d,
+        af.pre_acb_minutes_last_7d,
+        af.pre_days_since_last_acb_game,
+        round(
+            af.pre_acb_l5_minutes - pf.pre_l5_minutes,
+            3
+        ) as pre_acb_vs_el_l5_minutes_gap,
+        round(
+            af.pre_acb_l5_fga - pf.pre_l5_fga,
+            3
+        ) as pre_acb_vs_el_l5_fga_gap,
+        round(
+            af.pre_acb_l5_points - pf.pre_l5_points,
+            3
+        ) as pre_acb_vs_el_l5_points_gap,
+        round(
+            af.pre_acb_l5_points_per_minute
+                - pf.pre_l10_points_per_minute,
+            4
+        ) as pre_acb_vs_el_points_per_minute_gap,
+        round(
+            af.pre_acb_l5_fga_per_minute
+                - pf.pre_l10_fga_per_minute,
+            4
+        ) as pre_acb_vs_el_fga_per_minute_gap,
+        coalesce(pf.pre_games_last_7d, 0)
+            + coalesce(af.pre_acb_games_last_7d, 0)
+            as pre_combined_games_last_7d,
+        round(
+            coalesce(pf.pre_minutes_last_7d, 0)
+                + coalesce(af.pre_acb_minutes_last_7d, 0),
+            3
+        ) as pre_combined_minutes_last_7d,
+
         tt.pre_l5_off_rating as pre_team_l5_off_rating,
         tt.pre_l5_def_rating as pre_team_l5_def_rating,
         tt.pre_l5_possessions as pre_team_l5_possessions,
@@ -1680,6 +1842,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.free_throws_attempted as target_fta,
         pf.is_starter as target_was_starter
     from player_features pf
+    left join acb_features af
+      on af.season_code = pf.season_code
+     and af.gamecode = pf.gamecode
+     and af.player_id = pf.player_id
     left join team_features tt
       on tt.season_code = pf.season_code
      and tt.gamecode = pf.gamecode

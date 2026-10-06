@@ -164,6 +164,17 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_fga_spike_situational_reason_share" in sql
     assert "pre_fga_spike_role_expansion_share" in sql
     assert "pre_fga_spike_unexplained_share" in sql
+    assert "v_athlete_game_history" in sql
+    assert "h.source = 'ACB'" in sql
+    assert "h.utc_date < pf.game_tipoff_utc" in sql
+    assert "pre_acb_l5_minutes" in sql
+    assert "pre_acb_l5_fga" in sql
+    assert "pre_acb_l5_points" in sql
+    assert "pre_acb_minutes_last_7d" in sql
+    assert "pre_days_since_last_acb_game" in sql
+    assert "pre_acb_vs_el_l5_minutes_gap" in sql
+    assert "pre_acb_vs_el_l5_fga_gap" in sql
+    assert "pre_combined_minutes_last_7d" in sql
     assert "pre_last_context_neutral_fga_delta_vs_l10" in sql
     assert "pre_last_minutes_delta_vs_l10" in sql
     assert "rows between 20 preceding and 1 preceding" in sql
