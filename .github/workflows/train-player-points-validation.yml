@@ -86,7 +86,7 @@ jobs:
           gzip -dc .training-snapshot/warehouse.sql.gz |
             docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1
 
-      - name: Train E2023 and discover E2024 validation signals
+      - name: Train E2023 with full optional engines and validate on E2024
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
           PGOPTIONS: "-c search_path=warehouse"
@@ -96,6 +96,10 @@ jobs:
             --train-season E2023 \
             --validation-season E2024 \
             --blind-season E2025 \
+            --context-season E2022 \
+            --enabled-engine role2 \
+            --enabled-engine rotation \
+            --enabled-engine transition \
             --minutes-basis official \
             --min-history-games 3 \
             --report ml-output/validation_report.json \
