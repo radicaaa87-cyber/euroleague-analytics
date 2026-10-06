@@ -341,3 +341,156 @@ def summarize_repeating_patterns(
         reverse=True,
     )
     return rows
+
+
+def summarize_pattern_stability(
+    *,
+    actual: np.ndarray,
+    naive: np.ndarray,
+    predicted: np.ndarray,
+    fingerprints: list[dict[str, Any]],
+    groups: dict[str, list[Any]],
+    min_occurrences: int = 20,
+) -> list[dict[str, Any]]:
+    """Measure whether repeated patterns survive game/player/team clustering."""
+    if min_occurrences < 2:
+        raise ValueError("min_occurrences must be at least 2.")
+
+    hits = _directional_hits(actual, naive, predicted)
+    row_count = len(hits)
+    if len(fingerprints) != row_count:
+        raise ValueError("fingerprints must contain one row per prediction.")
+    for name, values in groups.items():
+        if len(values) != row_count:
+            raise ValueError(f"group {name} must contain one value per prediction.")
+
+    positions_by_pattern: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(fingerprints):
+        fingerprint = str(row["fingerprint"])
+        if fingerprint != "none":
+            positions_by_pattern[fingerprint].append(index)
+
+    rows: list[dict[str, Any]] = []
+    for fingerprint, positions in positions_by_pattern.items():
+        if len(positions) < min_occurrences:
+            continue
+
+        selected = np.asarray(positions, dtype=int)
+        unique_groups: dict[str, int] = {}
+        balanced_rates: dict[str, float] = {}
+        for name, values in groups.items():
+            hit_buckets: dict[str, list[bool]] = defaultdict(list)
+            for position in positions:
+                hit_buckets[str(values[position])].append(bool(hits[position]))
+            unique_groups[name] = len(hit_buckets)
+            balanced_rates[name] = float(
+                np.mean([np.mean(bucket) for bucket in hit_buckets.values()])
+            )
+
+        rows.append(
+            {
+                "fingerprint": fingerprint,
+                "occurrences": len(positions),
+                "row_directional_hit_rate": float(np.mean(hits[selected])),
+                "unique_groups": unique_groups,
+                "cluster_balanced_hit_rate": balanced_rates,
+            }
+        )
+
+    rows.sort(
+        key=lambda item: (
+            item["occurrences"],
+            item["row_directional_hit_rate"],
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def learn_pattern_effects(
+    *,
+    actual: np.ndarray,
+    naive: np.ndarray,
+    predicted: np.ndarray,
+    fingerprints: list[dict[str, Any]],
+    min_occurrences: int = 20,
+    prior_strength: float = 20.0,
+) -> dict[str, dict[str, Any]]:
+    """Learn shrunk pattern-level delta corrections from training-only OOF rows."""
+    if min_occurrences < 2:
+        raise ValueError("min_occurrences must be at least 2.")
+    if prior_strength <= 0:
+        raise ValueError("prior_strength must be positive.")
+
+    actual_values = np.asarray(actual, dtype=float)
+    naive_values = np.asarray(naive, dtype=float)
+    predicted_values = np.asarray(predicted, dtype=float)
+    if not (
+        len(actual_values)
+        == len(naive_values)
+        == len(predicted_values)
+        == len(fingerprints)
+    ):
+        raise ValueError("actual, naive, predicted and fingerprints must align.")
+
+    model_delta = predicted_values - naive_values
+    realized_delta = actual_values - naive_values
+    hits = _directional_hits(actual_values, naive_values, predicted_values)
+
+    positions_by_pattern: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(fingerprints):
+        fingerprint = str(row["fingerprint"])
+        if fingerprint != "none":
+            positions_by_pattern[fingerprint].append(index)
+
+    learned: dict[str, dict[str, Any]] = {}
+    for fingerprint, positions in positions_by_pattern.items():
+        if len(positions) < min_occurrences:
+            continue
+
+        selected = np.asarray(positions, dtype=int)
+        mean_model = float(np.mean(model_delta[selected]))
+        mean_realized = float(np.mean(realized_delta[selected]))
+        raw_correction = mean_realized - mean_model
+        weight = float(len(positions) / (len(positions) + prior_strength))
+        stable_direction = bool(
+            mean_model != 0.0
+            and mean_realized != 0.0
+            and np.sign(mean_model) == np.sign(mean_realized)
+        )
+        learned[fingerprint] = {
+            "occurrences": len(positions),
+            "mean_model_delta_points": mean_model,
+            "mean_realized_delta_points": mean_realized,
+            "directional_correction_hit_rate": float(np.mean(hits[selected])),
+            "raw_correction_points": raw_correction,
+            "shrinkage_weight": weight,
+            "calibration_correction_points": raw_correction * weight
+            if stable_direction
+            else 0.0,
+            "stable_direction": stable_direction,
+        }
+
+    return learned
+
+
+def apply_pattern_effects(
+    *,
+    naive: np.ndarray,
+    predicted: np.ndarray,
+    fingerprints: list[dict[str, Any]],
+    learned_effects: dict[str, dict[str, Any]],
+) -> np.ndarray:
+    """Apply training-only pattern calibration without replacing row-level prediction."""
+    naive_values = np.asarray(naive, dtype=float)
+    predicted_values = np.asarray(predicted, dtype=float)
+    if len(naive_values) != len(predicted_values) or len(fingerprints) != len(predicted_values):
+        raise ValueError("naive, predicted and fingerprints must align.")
+
+    calibrated = predicted_values.copy()
+    for index, row in enumerate(fingerprints):
+        learned = learned_effects.get(str(row["fingerprint"]))
+        if not learned or not bool(learned.get("stable_direction")):
+            continue
+        calibrated[index] += float(learned["calibration_correction_points"])
+    return calibrated
