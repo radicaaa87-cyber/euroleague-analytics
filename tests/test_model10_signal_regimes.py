@@ -424,3 +424,69 @@ def test_efficiency_cycle_effect_learning_can_make_mature_hot_a_minus_modifier()
     assert regression["mean_residual_points"] == -1.5
     assert regression["shrinkage_weight"] == 0.5
     assert regression["modifier_points"] == -0.75
+
+
+def test_pattern_effect_temporal_stability_blocks_sign_flip() -> None:
+    actual = np.asarray([11.0, 11.0, 8.0, 8.0])
+    naive = np.asarray([10.0, 10.0, 10.0, 10.0])
+    predicted = np.asarray([10.0, 10.0, 10.0, 10.0])
+    fingerprints = [{"fingerprint": "role_volume:+"}] * 4
+
+    learned = learn_pattern_effects(
+        actual=actual,
+        naive=naive,
+        predicted=predicted,
+        fingerprints=fingerprints,
+        temporal_blocks=[1, 1, 2, 2],
+        temporal_min_block_occurrences=2,
+        min_occurrences=4,
+        prior_strength=4.0,
+    )
+
+    row = learned["role_volume:+"]
+    assert row["temporal_block_mean_corrections"] == {"1": 1.0, "2": -2.0}
+    assert row["temporal_stability_passed"] is False
+    assert row["calibration_correction_points"] == 0.0
+
+
+def test_efficiency_effect_uses_stable_temporal_blocks_not_season_average() -> None:
+    actual = np.asarray([11.0, 11.0, 11.0, 12.0, 12.0, 12.0])
+    predicted = np.asarray([10.0] * 6)
+    labels = ["cold_regression_up"] * 6
+
+    learned = learn_efficiency_cycle_effects(
+        actual=actual,
+        predicted=predicted,
+        labels=labels,
+        temporal_blocks=[1, 1, 1, 2, 2, 2],
+        temporal_min_block_occurrences=3,
+        min_occurrences=6,
+        prior_strength=6.0,
+    )
+
+    row = learned["cold_regression_up"]
+    assert row["temporal_stability_passed"] is True
+    assert row["temporal_block_mean_residuals"] == {"1": 1.0, "2": 2.0}
+    # Learned effect is the block-balanced median (1.5), then shrinkage 0.5.
+    assert row["temporal_effect_points"] == 1.5
+    assert row["modifier_points"] == 0.75
+
+
+def test_efficiency_effect_temporal_sign_flip_neutralizes_modifier() -> None:
+    actual = np.asarray([11.0, 11.0, 11.0, 9.0, 9.0, 9.0])
+    predicted = np.asarray([10.0] * 6)
+    labels = ["cold_regression_up"] * 6
+
+    learned = learn_efficiency_cycle_effects(
+        actual=actual,
+        predicted=predicted,
+        labels=labels,
+        temporal_blocks=[1, 1, 1, 2, 2, 2],
+        temporal_min_block_occurrences=3,
+        min_occurrences=6,
+        prior_strength=6.0,
+    )
+
+    row = learned["cold_regression_up"]
+    assert row["temporal_stability_passed"] is False
+    assert row["modifier_points"] == 0.0
