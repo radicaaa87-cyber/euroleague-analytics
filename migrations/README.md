@@ -44,6 +44,7 @@ MCP — see `DECISIONS.md` item 10 for why this rather than the Supabase CLI.
 | `0037_pregame_context` | Adds the private leakage-safe `pregame_context_event` archive plus player/team context feature views for evidence published inside the 72-hour window before tipoff. Post-tipoff evidence is excluded by consumers; public API roles remain revoked and `el_reader`/`el_tester` receive read-only access. |
 | `0038_pregame_context_collection` | Adds an independent audit of pregame context collection runs so the model can distinguish searched-with-no-signal from historical games where context collection never ran. Stores query success/failure, players queried, items seen and inserted-event counts; read-only for `el_reader`/`el_tester`. **Applied on 2026-10-06 UTC** through the Supabase MCP. |
 | `0039_season_schedule_game` | Adds a lightweight full-season schedule mirror, including unplayed fixtures, so pregame collection and live model context can resolve upcoming games without changing `raw_game` semantics. Only schedule facts are stored; no boxscore/PBP data are implied. **Applied on 2026-10-06 UTC** through the Supabase MCP. |
+| `0040_bookmaker_market_archive` | Adds the private provenance-first bookmaker PDF archive: immutable source-document versions, parsed EuroLeague player-points offers, athlete/game link confidence, and collection-run coverage. Historical fetch time is explicitly separate from source offer/capture time; `anon`/`authenticated` are revoked and `el_reader`/`el_tester` are read-only. |
 
 ## The 0013 rehearsal, 2026-08-27
 
