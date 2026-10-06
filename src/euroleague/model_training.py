@@ -2059,6 +2059,40 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         from historical_context_events
         group by season_code, gamecode, target_player_id
     ),
+    historical_context_collection as (
+        select
+            pf.season_code,
+            pf.gamecode,
+            pf.player_id,
+            max(c.collected_at) as collection_feature_cutoff_time,
+            count(c.collection_id) as pre_context_collection_runs,
+            coalesce(sum(c.query_count), 0) as pre_context_query_count,
+            coalesce(sum(c.successful_query_count), 0)
+                as pre_context_successful_query_count,
+            coalesce(sum(c.failed_query_count), 0)
+                as pre_context_failed_query_count,
+            coalesce(sum(c.players_queried), 0)
+                as pre_context_players_queried,
+            coalesce(sum(c.items_seen), 0)
+                as pre_context_items_seen,
+            coalesce(sum(c.inserted_event_count), 0)
+                as pre_context_inserted_event_count,
+            case when count(c.collection_id) > 0 then 1 else 0 end
+                as pre_context_data_available,
+            round(
+                coalesce(sum(c.successful_query_count), 0)::numeric
+                / nullif(coalesce(sum(c.query_count), 0), 0),
+                4
+            ) as pre_context_query_success_rate
+        from player_features pf
+        left join pregame_context_collection c
+          on c.season_code = pf.season_code
+         and c.gamecode = pf.gamecode
+         and c.team_code = pf.team_code
+         and c.collected_at < pf.game_tipoff_utc
+         and c.collected_at >= pf.game_tipoff_utc - interval '72 hours'
+        group by pf.season_code, pf.gamecode, pf.player_id
+    ),
     team_features as (
         select
             tg.season_code,
@@ -2097,7 +2131,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ort.rotation_feature_cutoff_time,
             opt.position_feature_cutoff_time,
             af.acb_feature_cutoff_time,
-            hcf.context_feature_cutoff_time
+            hcf.context_feature_cutoff_time,
+            hcc.collection_feature_cutoff_time
         ) as feature_cutoff_time,
         pf.game_date,
         pf.player_id,
@@ -2304,6 +2339,23 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             as pre_teammate_doubt_vacated_minutes_l5,
         coalesce(hcf.pre_teammate_doubt_vacated_fga_l5, 0)
             as pre_teammate_doubt_vacated_fga_l5,
+        coalesce(hcc.pre_context_collection_runs, 0)
+            as pre_context_collection_runs,
+        coalesce(hcc.pre_context_query_count, 0)
+            as pre_context_query_count,
+        coalesce(hcc.pre_context_successful_query_count, 0)
+            as pre_context_successful_query_count,
+        coalesce(hcc.pre_context_failed_query_count, 0)
+            as pre_context_failed_query_count,
+        coalesce(hcc.pre_context_players_queried, 0)
+            as pre_context_players_queried,
+        coalesce(hcc.pre_context_items_seen, 0)
+            as pre_context_items_seen,
+        coalesce(hcc.pre_context_inserted_event_count, 0)
+            as pre_context_inserted_event_count,
+        coalesce(hcc.pre_context_data_available, 0)
+            as pre_context_data_available,
+        hcc.pre_context_query_success_rate,
 
         af.pre_acb_l5_games,
         af.pre_acb_l3_minutes,
@@ -2417,6 +2469,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
       on hcf.season_code = pf.season_code
      and hcf.gamecode = pf.gamecode
      and hcf.player_id = pf.player_id
+    left join historical_context_collection hcc
+      on hcc.season_code = pf.season_code
+     and hcc.gamecode = pf.gamecode
+     and hcc.player_id = pf.player_id
     left join team_features tt
       on tt.season_code = pf.season_code
      and tt.gamecode = pf.gamecode
