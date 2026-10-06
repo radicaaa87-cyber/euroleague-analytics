@@ -1,0 +1,14 @@
+{
+  "name": "E2024 bookmaker holdout",
+  "locked_at": "2026-10-06",
+  "source_table": "bookmaker_player_points_offer",
+  "selection": {
+    "season_code": "E2024",
+    "gamecode_not_null": true,
+    "created_at_lte": "2026-10-06 14:10:11.755763+00"
+  },
+  "offer_count": 131,
+  "holdout_md5": "3dfdc1468dbeb7d9873ca4dbbf309ea7",
+  "benchmark_matched_predictions": 107,
+  "policy": "Evaluation only. Do not use bookmaker line, odds, outcomes, or thresholds from this holdout as training inputs or retune the model on this sample."
+}
