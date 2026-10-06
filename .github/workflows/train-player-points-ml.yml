@@ -31,19 +31,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: "0.12.23"
           enable-cache: false
+
       - name: Create Python 3.14 environment
         run: |
           uv python install 3.14
           uv venv --python 3.14 .venv
+
       - name: Install training dependencies
         run: |
           uv pip install --python .venv/bin/python -r requirements.txt
           uv pip install --python .venv/bin/python -r requirements-ml.txt
           uv pip install --python .venv/bin/python -e .
+
+      - name: Restore ready training warehouse snapshot cache
+        id: snapshot_cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .training-snapshot
+          key: ml-training-warehouse-pg17-${{ hashFiles('.github/ml-training-snapshot.version', 'migrations/*.up.sql') }}
+
       - name: Create disposable training database
         run: |
           .venv/bin/python - <<'PY'
@@ -56,7 +67,26 @@ jobs:
               connection.execute("create role authenticated nologin")
               connection.execute("create database euroleague_test")
           PY
+
+      - name: Load cached training warehouse snapshot
+        if: steps.snapshot_cache.outputs.cache-hit == 'true'
+        run: |
+          sha256sum -c .training-snapshot/warehouse.sql.gz.sha256
+          POSTGRES_CONTAINER="$(docker ps --filter ancestor=postgres:17 --format '{{.ID}}' | head -n 1)"
+          test -n "$POSTGRES_CONTAINER"
+          gzip -dc .training-snapshot/warehouse.sql.gz |
+            docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d euroleague_test -v ON_ERROR_STOP=1
+
+      - name: Restore raw archive cache
+        if: steps.snapshot_cache.outputs.cache-hit != 'true'
+        id: raw_cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .training-cache
+          key: ml-raw-archives-v1-E2023-E2024-E2025
+
       - name: Restore checksum-verified training archives
+        if: steps.snapshot_cache.outputs.cache-hit != 'true' && steps.raw_cache.outputs.cache-hit != 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -64,7 +94,16 @@ jobs:
         run: >-
           .venv/bin/python scripts/restore_training_archives.py
           E2023 E2024 E2025 --cache-dir .training-cache
+
+      - name: Save raw archive cache
+        if: steps.snapshot_cache.outputs.cache-hit != 'true' && steps.raw_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .training-cache
+          key: ml-raw-archives-v1-E2023-E2024-E2025
+
       - name: Build disposable local historical warehouse
+        if: steps.snapshot_cache.outputs.cache-hit != 'true'
         env:
           EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
         run: >-
@@ -74,11 +113,31 @@ jobs:
           --replace
           --cache-dir .training-cache
           --output ml-output/local_warehouse.json
+
       - name: Copy compact ACB, identity and pregame context
+        if: steps.snapshot_cache.outputs.cache-hit != 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
         run: .venv/bin/python scripts/copy_training_context.py
+
+      - name: Create ready training warehouse snapshot
+        if: steps.snapshot_cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .training-snapshot
+          POSTGRES_CONTAINER="$(docker ps --filter ancestor=postgres:17 --format '{{.ID}}' | head -n 1)"
+          test -n "$POSTGRES_CONTAINER"
+          docker exec "$POSTGRES_CONTAINER" pg_dump             -U postgres -d euroleague_test             --schema=warehouse --no-owner --no-privileges |
+            gzip -1 > .training-snapshot/warehouse.sql.gz
+          sha256sum .training-snapshot/warehouse.sql.gz             > .training-snapshot/warehouse.sql.gz.sha256
+
+      - name: Save ready training warehouse snapshot cache
+        if: steps.snapshot_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .training-snapshot
+          key: ml-training-warehouse-pg17-${{ hashFiles('.github/ml-training-snapshot.version', 'migrations/*.up.sql') }}
+
       - name: Benchmark four model families and blind-test the validation winner
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
@@ -86,6 +145,7 @@ jobs:
         run: |
           mkdir -p ml-output
           .venv/bin/python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv --preblind-lock ml-output/preblind_lock.json
+
       - name: Persist candidate model
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -95,6 +155,7 @@ jobs:
           MODEL_GIT_COMMIT: ${{ github.sha }}
         run: |
           .venv/bin/python scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "$MODEL_VERSION" --git-commit "$MODEL_GIT_COMMIT"
+
       - name: Upload ML artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
