@@ -798,6 +798,14 @@ def main(argv: list[str] | None = None) -> int:
         key=lambda item: item["positive_importance_sum"],
         reverse=True,
     )
+    grouped_source_importance = _group_permutation_importance(
+        final_model,
+        importance_x,
+        importance_y,
+        feature_names,
+        provenance,
+        repeats=5,
+    )
 
     report = {
         "created_at": datetime.now(UTC).isoformat(),
