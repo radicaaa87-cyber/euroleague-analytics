@@ -613,23 +613,60 @@ def main(argv: list[str] | None = None) -> int:
                 "selected_params": minutes_result["selected"]["params"],
                 "blind_test": minutes_result["blind_test"],
             },
-            "fga": {
-                "validation_leaderboard": fga_result["validation_leaderboard"],
+            "fga_per_minute": {
+                "validation_leaderboard": fga_rate_result["validation_leaderboard"],
                 "selected_model": {
-                    **fga_result["identity"],
-                    "candidate_id": fga_result["selected"]["candidate_id"],
+                    **fga_rate_result["identity"],
+                    "candidate_id": fga_rate_result["selected"]["candidate_id"],
                 },
-                "selected_params": fga_result["selected"]["params"],
-                "blind_test": fga_result["blind_test"],
+                "selected_params": fga_rate_result["selected"]["params"],
+                "blind_test": fga_rate_result["blind_test"],
+            },
+            "three_point_share": {
+                "validation_leaderboard": three_share_result["validation_leaderboard"],
+                "selected_model": {
+                    **three_share_result["identity"],
+                    "candidate_id": three_share_result["selected"]["candidate_id"],
+                },
+                "selected_params": three_share_result["selected"]["params"],
+                "blind_test": three_share_result["blind_test"],
+            },
+            "fta_per_minute": {
+                "validation_leaderboard": fta_rate_result["validation_leaderboard"],
+                "selected_model": {
+                    **fta_rate_result["identity"],
+                    "candidate_id": fta_rate_result["selected"]["candidate_id"],
+                },
+                "selected_params": fta_rate_result["selected"]["params"],
+                "blind_test": fta_rate_result["blind_test"],
+            },
+            "derived_attempts": {
+                "fga": fga_total_metrics,
+                "3pa": three_pa_total_metrics,
+                "fta": fta_total_metrics,
             },
         },
         "prediction_architecture": {
-            "base": "pre_naive_points_mean",
+            "naive_base": "pre_naive_points_mean",
+            "role_chain": (
+                "predicted MIN -> predicted FGA/min -> predicted FGA -> "
+                "predicted 3PA share + predicted FTA/min -> ROLE BASE PTS"
+            ),
+            "role_base_formula": (
+                "2 * predicted_2PA * pre_l10_2p_pct + "
+                "3 * predicted_3PA * pre_l10_3p_pct + "
+                "predicted_FTA * pre_l10_ft_pct"
+            ),
             "learned_target": "target_points - pre_naive_points_mean",
             "final_prediction": "pre_naive_points_mean + predicted_delta",
         },
+        "efficiency_priors": efficiency_priors,
         "naive_points_baseline": naive_baseline_metrics,
+        "role_base_points": role_base_metrics,
         "l10_points_baseline": l10_baseline_metrics,
+        "mae_improvement_role_base_vs_naive": float(
+            naive_baseline_metrics["mae"] - role_base_metrics["mae"]
+        ),
         "mae_improvement_vs_naive": float(
             naive_baseline_metrics["mae"] - test_metrics["mae"]
         ),
@@ -647,7 +684,11 @@ def main(argv: list[str] | None = None) -> int:
             "average; final points equal naive baseline plus predicted residual.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
-            "Minutes and FGA are independently forecast as auxiliary role and volume targets.",
+            "The transparent role chain forecasts minutes first, then FGA/min, "
+            "3PA share and FTA/min; those forecasts produce expected FGA/3PA/FTA totals.",
+            "ROLE BASE converts expected attempts to points with leakage-safe L10 2P/3P/FT "
+            "efficiency, using priors learned only from final-train pre-game features when "
+            "a player lacks enough historical attempts.",
             "Role-volatility features separate recurring variance from one-game contextual shocks.",
             "A temporal leakage gate requires every feature cutoff to precede tipoff.",
             "Adding E2025 must leave every E2023/E2024 model feature byte-for-byte equal.",
@@ -667,15 +708,30 @@ def main(argv: list[str] | None = None) -> int:
                 "point_model_target": "delta_vs_naive",
                 "naive_baseline_feature": "pre_naive_points_mean",
                 "minutes_model": minutes_result["model"],
-                "fga_model": fga_result["model"],
+                "fga_model": fga_rate_result["model"],
+                "fga_model_target": "fga_per_minute",
+                "fga_per_minute_model": fga_rate_result["model"],
+                "three_point_share_model": three_share_result["model"],
+                "fta_per_minute_model": fta_rate_result["model"],
+                "role_base_efficiency_features": {
+                    "two_pct": "pre_l10_2p_pct",
+                    "three_pct": "pre_l10_3p_pct",
+                    "ft_pct": "pre_l10_ft_pct",
+                },
+                "role_base_efficiency_priors": efficiency_priors,
                 "model_family": selected["family"],
                 "model_identity": selected_identity,
                 "features": feature_names,
                 "selected_params": selected["params"],
                 "minutes_selected_model": minutes_result["identity"],
                 "minutes_selected_params": minutes_result["selected"]["params"],
-                "fga_selected_model": fga_result["identity"],
-                "fga_selected_params": fga_result["selected"]["params"],
+                "fga_selected_model": fga_rate_result["identity"],
+                "fga_selected_params": fga_rate_result["selected"]["params"],
+                "fga_selected_target": "fga_per_minute",
+                "three_point_share_selected_model": three_share_result["identity"],
+                "three_point_share_selected_params": three_share_result["selected"]["params"],
+                "fta_per_minute_selected_model": fta_rate_result["identity"],
+                "fta_per_minute_selected_params": fta_rate_result["selected"]["params"],
                 "minutes_basis": args.minutes_basis,
                 "trained_seasons": [args.train_season, args.validation_season],
                 "blind_test_season": args.test_season,
@@ -706,9 +762,14 @@ def main(argv: list[str] | None = None) -> int:
         test_prediction_delta,
         test_prediction,
         minutes_y[test_mask],
-        minutes_result["test_prediction"],
+        predicted_minutes,
         fga_y[test_mask],
-        fga_result["test_prediction"],
+        predicted_fga,
+        three_pa_y[test_mask],
+        predicted_3pa,
+        fta_y[test_mask],
+        predicted_fta,
+        role_base_points,
     )
 
     print(json.dumps(report["rows"], sort_keys=True))
@@ -719,9 +780,10 @@ def main(argv: list[str] | None = None) -> int:
         + json.dumps(report["auxiliary_targets"]["minutes"]["blind_test"], sort_keys=True)
     )
     print(
-        "fga_blind_test="
-        + json.dumps(report["auxiliary_targets"]["fga"]["blind_test"], sort_keys=True)
+        "derived_attempts_blind_test="
+        + json.dumps(report["auxiliary_targets"]["derived_attempts"], sort_keys=True)
     )
+    print("role_base_blind_test=" + json.dumps(report["role_base_points"], sort_keys=True))
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
     print(f"features={len(feature_names)}")
