@@ -5366,3 +5366,29 @@ test.
 reactivated only after a pre-game context split shows a stable direction using
 training-only chronological evidence. This rule changes model logic only and
 does not change ingestion, warehouse, snapshot, or source-processing behavior.
+
+
+## 93. Every validation run exports a full diagnostic mart
+
+**Decided 2026-10-06 by the owner**, after repeated validation reruns were needed
+only to expose one additional signal column.
+
+**Decision.** Each player-points validation run must export one row-level diagnostic
+mart for the validation season containing all available pre-game features, local
+signal-domain contributions, situation fingerprints and tiers, hot/cold state,
+pattern and efficiency modifiers with temporal-stability metadata, base and adjusted
+point predictions, and auxiliary actual/predicted minutes, FGA, 3PA and FTA.
+
+The diagnostic mart is an analysis artifact, not a new model input. It exists so
+signal logic can be inspected, segmented and tuned from one completed run without
+retraining merely to expose another diagnostic column.
+
+**Why.** Model fitting and feature construction dominate runtime; writing a wider
+validation artifact is cheap by comparison. Persisting the full mart separates
+model training from downstream diagnostic analysis and reduces repeated training
+cycles.
+
+**Condition.** The export must contain only information already available to the
+completed validation run. This decision does not change source ingestion, warehouse
+rows, training features, model weights or blind-season policy. E2025 remains closed
+until explicitly opened under the existing blind-test rules.
