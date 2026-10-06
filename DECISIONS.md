@@ -5307,3 +5307,26 @@ destructive production operation.
 **Condition.** Any future change that modifies both model logic and the ingest/storage
 path must be split into separately measured changes. Performance work must report
 batch counts and elapsed time so regressions are visible immediately.
+
+
+## 91. The E2024 bookmaker sample is a frozen evaluation holdout
+
+**Decided 2026-10-06 by the owner**, after the first direct MODEL 10 comparison
+against historical player-points lines.
+
+**Decision.** The currently linked E2024 bookmaker sample is frozen for repeated
+evaluation only. It contains 131 linked offers; 107 currently have a matching
+locked E2024 validation prediction. The holdout definition and integrity hash are
+recorded in `data/bookmaker_e2024_holdout_manifest.json`.
+
+Bookmaker line, odds, realized result, and thresholds learned from this holdout
+must not be used as training inputs for the base player-points model. Future model
+versions are evaluated on the same holdout so changes can be compared directly.
+
+**Why.** Reusing the same bookmaker sample as both training evidence and the test
+would make apparent betting improvement impossible to distinguish from retuning
+to the test set.
+
+**Condition.** New historical bookmaker offers may be collected into the source
+database, but they do not silently enter this frozen holdout. A larger holdout or
+a market-residual training set must be versioned separately.
