@@ -309,6 +309,20 @@ def main(argv: list[str] | None = None) -> int:
     if not np.any(train_mask) or not np.any(validation_mask):
         raise RuntimeError("Training and validation splits must both contain rows.")
 
+    # A feature with zero observed values in E2023 cannot be learned without
+    # looking forward into validation. Drop only those columns, using the
+    # training season alone, and report them as coverage gaps rather than
+    # treating them as unimportant signals.
+    train_has_value = np.any(np.isfinite(x[train_mask]), axis=0)
+    dropped_untrainable_features = [
+        feature for feature, keep in zip(feature_names, train_has_value, strict=True) if not keep
+    ]
+    if dropped_untrainable_features:
+        x = x[:, train_has_value]
+        feature_names = [
+            feature for feature, keep in zip(feature_names, train_has_value, strict=True) if keep
+        ]
+
     point_delta = y - naive
     point_result = _benchmark_validation_target(x, point_delta, train_mask, validation_mask)
     validation_delta = point_result["validation_prediction"]
@@ -489,6 +503,8 @@ def main(argv: list[str] | None = None) -> int:
         },
         "feature_count": len(feature_names),
         "features": feature_names,
+        "dropped_untrainable_features": dropped_untrainable_features,
+        "dropped_untrainable_feature_count": len(dropped_untrainable_features),
         "feature_provenance": provenance_manifest(feature_names),
         "leakage_audit": leakage_audit,
         "candidate_results": point_result["candidate_results"],
@@ -603,6 +619,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
+    print(
+        "dropped_untrainable_features="
+        + json.dumps(dropped_untrainable_features, sort_keys=True)
+    )
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
     print(
