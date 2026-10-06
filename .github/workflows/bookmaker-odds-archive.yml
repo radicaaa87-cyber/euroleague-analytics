@@ -1,0 +1,97 @@
+name: Collect bookmaker player-points archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_date:
+        description: Historical start date (YYYY-MM-DD)
+        required: false
+        default: "2024-09-01"
+        type: string
+      to_date:
+        description: Historical end date (YYYY-MM-DD); empty means today
+        required: false
+        default: ""
+        type: string
+      bookmakers:
+        description: Comma-separated bookmaker adapters
+        required: false
+        default: "mozzart,starbet"
+        type: string
+      max_docs:
+        description: Maximum discovered PDFs to process
+        required: false
+        default: "150"
+        type: string
+  schedule:
+    - cron: "23 8,12,16 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bookmaker-player-points-archive
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Resolve collection window
+        id: window
+        env:
+          INPUT_FROM_DATE: ${{ inputs.from_date }}
+          INPUT_TO_DATE: ${{ inputs.to_date }}
+          INPUT_BOOKMAKERS: ${{ inputs.bookmakers }}
+          INPUT_MAX_DOCS: ${{ inputs.max_docs }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import date, timedelta
+
+          if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+              start = date.today() - timedelta(days=14)
+              finish = date.today()
+              bookmakers = "mozzart,starbet"
+              max_docs = "80"
+          else:
+              start = date.fromisoformat(os.environ.get("INPUT_FROM_DATE") or "2024-09-01")
+              finish_raw = os.environ.get("INPUT_TO_DATE") or ""
+              finish = date.fromisoformat(finish_raw) if finish_raw else date.today()
+              bookmakers = os.environ.get("INPUT_BOOKMAKERS") or "mozzart,starbet"
+              max_docs = os.environ.get("INPUT_MAX_DOCS") or "150"
+
+          print(f"from_date={start.isoformat()}")
+          print(f"to_date={finish.isoformat()}")
+          print(f"bookmakers={bookmakers}")
+          print(f"max_docs={max_docs}")
+          PY
+
+      - name: Discover, parse and archive bookmaker player-points offers
+        run: |
+          python scripts/collect_bookmaker_odds.py \
+            --from-date "${{ steps.window.outputs.from_date }}" \
+            --to-date "${{ steps.window.outputs.to_date }}" \
+            --bookmakers "${{ steps.window.outputs.bookmakers }}" \
+            --max-docs "${{ steps.window.outputs.max_docs }}"
