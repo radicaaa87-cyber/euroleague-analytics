@@ -44,6 +44,10 @@ from train_player_points_ml import (
 MIN_TRAIN_FEATURE_COVERAGE = 0.05
 POINT_RESIDUAL_SHRINKAGE_GRID = (0.25, 0.5, 0.75, 1.0)
 POINT_STABILITY_FOLDS = 3
+ENGINE_FEATURE_PREFIXES = {
+    "role2": "pre_role2_",
+    "rotation": "pre_rotation_",
+}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -62,6 +66,16 @@ def _parser() -> argparse.ArgumentParser:
         choices=("official", "corrected", "raw"),
     )
     parser.add_argument("--min-history-games", type=int, default=3)
+    parser.add_argument(
+        "--enabled-engine",
+        action="append",
+        choices=tuple(ENGINE_FEATURE_PREFIXES),
+        default=[],
+        help=(
+            "Enable one optional feature engine. Repeat to compose ablation layers; "
+            "default is the legacy baseline with all optional engines excluded."
+        ),
+    )
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--predictions", type=Path, required=True)
@@ -502,6 +516,17 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     feature_names = model_feature_columns(columns)
+    enabled_engines = tuple(dict.fromkeys(args.enabled_engine))
+    all_engine_prefixes = tuple(ENGINE_FEATURE_PREFIXES.values())
+    enabled_engine_prefixes = tuple(
+        ENGINE_FEATURE_PREFIXES[name] for name in enabled_engines
+    )
+    feature_names = [
+        feature
+        for feature in feature_names
+        if not feature.startswith(all_engine_prefixes)
+        or feature.startswith(enabled_engine_prefixes)
+    ]
     if not feature_names:
         raise RuntimeError("No legal pre-game feature columns were produced.")
     index = {name: position for position, name in enumerate(columns)}
@@ -732,6 +757,15 @@ def main(argv: list[str] | None = None) -> int:
         },
         "feature_count": len(feature_names),
         "features": feature_names,
+        "enabled_engines": list(enabled_engines),
+        "engine_ablation": {
+            "available": list(ENGINE_FEATURE_PREFIXES),
+            "enabled": list(enabled_engines),
+            "policy": (
+                "Optional engines are excluded by default and enabled cumulatively "
+                "so each layer can be measured against the previous model."
+            ),
+        },
         "dropped_untrainable_features": dropped_untrainable_features,
         "dropped_untrainable_feature_count": len(dropped_untrainable_features),
         "dropped_feature_details": dropped_feature_details,
@@ -848,6 +882,7 @@ def main(argv: list[str] | None = None) -> int:
                 "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
                 "selection_policy": point_result["selection_policy"],
                 "features": feature_names,
+                "enabled_engines": list(enabled_engines),
                 "trained_seasons": [args.train_season],
                 "validation_season": args.validation_season,
                 "blind_reserved_season": args.blind_season,
@@ -871,6 +906,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "dropped_untrainable_features=" + json.dumps(dropped_untrainable_features, sort_keys=True)
     )
+    print(f"enabled_engines={json.dumps(list(enabled_engines), sort_keys=True)}")
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"validation_points={json.dumps(validation_metrics, sort_keys=True)}")
     print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
