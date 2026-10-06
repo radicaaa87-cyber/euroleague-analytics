@@ -5330,3 +5330,39 @@ to the test set.
 **Condition.** New historical bookmaker offers may be collected into the source
 database, but they do not silently enter this frozen holdout. A larger holdout or
 a market-residual training set must be versioned separately.
+
+
+## 92. Learned signal weights require temporal stability and are not season-average carryovers
+
+**Decided 2026-10-06 by the owner**, while refining MODEL 10 signal logic.
+
+**Decision.** The player-points model is predictive, not a table of last-season
+average effects. A historical signal must not receive a fixed future modifier
+merely because its pooled mean was positive or negative in the previous season.
+
+Learned pattern and efficiency modifiers are estimated only from chronological
+out-of-fold training history. The training history is divided into time-ordered
+blocks. A modifier may influence a future prediction only when its direction is
+stable across eligible blocks. If the learned effect changes sign across those
+blocks, or there is insufficient temporal evidence, the modifier is neutralized
+to zero until a more specific basketball context explains the instability.
+
+When the direction is stable, the effect estimate is based on the median of the
+eligible chronological block means and is then shrunk by sample support. A dense
+period therefore cannot dominate the effect simply because it contributes more
+rows to one pooled seasonal average.
+
+**Why.** A signal that appears to be +0.5 points in one period and -1.0 in
+another can damage generalization if the earlier average is carried forward as
+truth. The model must learn repeatable predictive relationships and distinguish
+context-dependent effects from unstable averages.
+
+**Validation boundary.** E2024 may measure whether this rule generalizes, but
+E2024 outcomes must not be used to choose the sign, weight, threshold, or block
+effect. E2025 remains blind until the model is explicitly locked for the blind
+test.
+
+**Condition.** Sign-flipping learned modifiers are zero by default. They may be
+reactivated only after a pre-game context split shows a stable direction using
+training-only chronological evidence. This rule changes model logic only and
+does not change ingestion, warehouse, snapshot, or source-processing behavior.
