@@ -16,7 +16,7 @@ on:
       bookmakers:
         description: Comma-separated bookmaker adapters
         required: false
-        default: "mozzart,starbet"
+        default: "mozzart,starbet,meridian,millennium"
         type: string
       max_docs:
         description: Maximum discovered PDFs to process
@@ -77,7 +77,7 @@ jobs:
           if event == "schedule":
               start = date.today() - timedelta(days=14)
               finish = date.today()
-              bookmakers = "mozzart,starbet"
+              bookmakers = "mozzart,starbet,meridian,millennium"
               max_docs = "80"
           elif event == "push":
               import json
@@ -86,13 +86,13 @@ jobs:
               request = json.loads(Path(".github/bookmaker-odds.request").read_text())
               start = date.fromisoformat(request["from_date"])
               finish = date.fromisoformat(request["to_date"])
-              bookmakers = request.get("bookmakers", "mozzart,starbet")
+              bookmakers = request.get("bookmakers", "mozzart,starbet,meridian,millennium")
               max_docs = str(request.get("max_docs", 150))
           else:
               start = date.fromisoformat(os.environ.get("INPUT_FROM_DATE") or "2024-09-01")
               finish_raw = os.environ.get("INPUT_TO_DATE") or ""
               finish = date.fromisoformat(finish_raw) if finish_raw else date.today()
-              bookmakers = os.environ.get("INPUT_BOOKMAKERS") or "mozzart,starbet"
+              bookmakers = os.environ.get("INPUT_BOOKMAKERS") or "mozzart,starbet,meridian,millennium"
               max_docs = os.environ.get("INPUT_MAX_DOCS") or "150"
 
           print(f"from_date={start.isoformat()}")
