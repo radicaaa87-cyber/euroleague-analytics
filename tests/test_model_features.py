@@ -551,6 +551,9 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_minutes_last_14d" in sql
     assert "pre_l3_ts_proxy" in sql
     assert "pre_l10_ts_proxy" in sql
+    assert "pre_l10_2p_pct" in sql
+    assert "pre_l10_3p_pct" in sql
+    assert "pre_l10_ft_pct" in sql
     assert "pre_ts_trend_l3_vs_l10" in sql
     assert "hand_pre_l10_ts_mean" in sql
     assert "hand_pre_l10_ts_std" in sql
