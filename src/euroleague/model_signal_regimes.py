@@ -407,12 +407,63 @@ def summarize_pattern_stability(
     return rows
 
 
+def _temporal_effect_stability(
+    *,
+    values: np.ndarray,
+    positions: list[int],
+    temporal_blocks: list[Any] | np.ndarray | None,
+    min_block_occurrences: int,
+) -> dict[str, Any]:
+    """Gate learned effects on direction stability across chronological OOF blocks."""
+    selected_values = np.asarray(values, dtype=float)
+    if temporal_blocks is None:
+        return {
+            "passed": True,
+            "block_means": {},
+            "effect_points": float(np.mean(selected_values[np.asarray(positions, dtype=int)])),
+            "eligible_blocks": 0,
+        }
+    if min_block_occurrences < 1:
+        raise ValueError("temporal_min_block_occurrences must be positive.")
+    if len(temporal_blocks) != len(selected_values):
+        raise ValueError("temporal_blocks must align with learned-effect rows.")
+
+    buckets: dict[str, list[float]] = defaultdict(list)
+    for position in positions:
+        buckets[str(temporal_blocks[position])].append(float(selected_values[position]))
+
+    block_means = {
+        block: float(np.mean(bucket))
+        for block, bucket in buckets.items()
+        if len(bucket) >= min_block_occurrences
+    }
+    if len(block_means) < 2:
+        return {
+            "passed": False,
+            "block_means": block_means,
+            "effect_points": 0.0,
+            "eligible_blocks": len(block_means),
+        }
+
+    means = np.asarray(list(block_means.values()), dtype=float)
+    signs = np.sign(means)
+    passed = bool(np.all(signs != 0.0) and np.all(signs == signs[0]))
+    return {
+        "passed": passed,
+        "block_means": block_means,
+        "effect_points": float(np.median(means)) if passed else 0.0,
+        "eligible_blocks": len(block_means),
+    }
+
+
 def learn_pattern_effects(
     *,
     actual: np.ndarray,
     naive: np.ndarray,
     predicted: np.ndarray,
     fingerprints: list[dict[str, Any]],
+    temporal_blocks: list[Any] | np.ndarray | None = None,
+    temporal_min_block_occurrences: int = 3,
     min_occurrences: int = 20,
     prior_strength: float = 20.0,
 ) -> dict[str, dict[str, Any]]:
@@ -448,10 +499,24 @@ def learn_pattern_effects(
         mean_realized = float(np.mean(realized_delta[selected]))
         raw_correction = mean_realized - mean_model
         weight = float(len(positions) / (len(positions) + prior_strength))
-        stable_direction = bool(
+        temporal = _temporal_effect_stability(
+            values=actual_values - predicted_values,
+            positions=positions,
+            temporal_blocks=temporal_blocks,
+            min_block_occurrences=temporal_min_block_occurrences,
+        )
+        direction_matches = bool(
             mean_model != 0.0
             and mean_realized != 0.0
             and np.sign(mean_model) == np.sign(mean_realized)
+        )
+        temporal_required = temporal_blocks is not None
+        stable_direction = bool(
+            direction_matches
+            and (not temporal_required or bool(temporal["passed"]))
+        )
+        correction_basis = (
+            float(temporal["effect_points"]) if temporal_required else raw_correction
         )
         learned[fingerprint] = {
             "occurrences": len(positions),
@@ -459,8 +524,12 @@ def learn_pattern_effects(
             "mean_realized_delta_points": mean_realized,
             "directional_correction_hit_rate": float(np.mean(hits[selected])),
             "raw_correction_points": raw_correction,
+            "temporal_block_mean_corrections": temporal["block_means"],
+            "temporal_eligible_blocks": temporal["eligible_blocks"],
+            "temporal_stability_passed": bool(temporal["passed"]),
+            "temporal_effect_points": correction_basis,
             "shrinkage_weight": weight,
-            "calibration_correction_points": raw_correction * weight if stable_direction else 0.0,
+            "calibration_correction_points": correction_basis * weight if stable_direction else 0.0,
             "stable_direction": stable_direction,
         }
 
@@ -787,6 +856,8 @@ def learn_efficiency_cycle_effects(
     actual: np.ndarray,
     predicted: np.ndarray,
     labels: list[str],
+    temporal_blocks: list[Any] | np.ndarray | None = None,
+    temporal_min_block_occurrences: int = 3,
     min_occurrences: int = 20,
     prior_strength: float = 20.0,
 ) -> dict[str, dict[str, Any]]:
@@ -814,12 +885,30 @@ def learn_efficiency_cycle_effects(
         selected = np.asarray(positions, dtype=int)
         mean_residual = float(np.mean(residual[selected]))
         weight = float(len(positions) / (len(positions) + prior_strength))
+        temporal = _temporal_effect_stability(
+            values=residual,
+            positions=positions,
+            temporal_blocks=temporal_blocks,
+            min_block_occurrences=temporal_min_block_occurrences,
+        )
+        temporal_required = temporal_blocks is not None
+        effect_basis = (
+            float(temporal["effect_points"]) if temporal_required else mean_residual
+        )
         learned[label] = {
             "occurrences": len(positions),
             "mean_residual_points": mean_residual,
             "residual_std_points": float(np.std(residual[selected])),
+            "temporal_block_mean_residuals": temporal["block_means"],
+            "temporal_eligible_blocks": temporal["eligible_blocks"],
+            "temporal_stability_passed": bool(temporal["passed"]),
+            "temporal_effect_points": effect_basis,
             "shrinkage_weight": weight,
-            "modifier_points": mean_residual * weight,
+            "modifier_points": (
+                effect_basis * weight
+                if (not temporal_required or bool(temporal["passed"]))
+                else 0.0
+            ),
         }
     return learned
 
