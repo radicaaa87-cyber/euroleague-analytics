@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from euroleague.bookmaker_odds import (
     AthleteCandidate,
     infer_document_date,
+    parse_meridian_player_points_pages,
+    parse_millennium_player_points_pages,
     parse_mozzart_player_points_pages,
     parse_starbet_player_points_pages,
     resolve_participant,
@@ -118,3 +120,31 @@ def test_document_date_comes_from_source_not_collection_time() -> None:
 
     assert str(dated) == "2024-11-15"
     assert str(missing_year) == "2025-11-22"
+
+
+def test_parse_meridian_and_millennium_strict_euroleague_sections() -> None:
+    euroleague = """
+KOŠARKA
+EVROLIGA
+POENI IGRAČA manje više
+Čet 20:30 8123 James Mike Monaco 17.5 1.85 1.87
+SKOKOVI IGRAČA
+Čet 20:30 8123 James Mike Monaco 3.5 1.85 1.87
+"""
+    other_league = """
+ABA LIGA
+POENI IGRAČA manje više
+Čet 18:00 7001 Brown Sterling Partizan 12.5 1.85 1.87
+"""
+
+    meridian = parse_meridian_player_points_pages([euroleague, other_league])
+    millennium = parse_millennium_player_points_pages([euroleague, other_league])
+
+    assert len(meridian) == 1
+    assert meridian[0].participant_text == "James Mike Monaco"
+    assert meridian[0].points_line == 17.5
+    assert meridian[0].under_odds == 1.85
+    assert meridian[0].over_odds == 1.87
+
+    assert len(millennium) == 1
+    assert millennium[0].bookmaker == "millennium"
