@@ -413,7 +413,7 @@ def load_role_context_features(
     player_id: str,
 ) -> dict[str, object]:
     """Return forward-only role opportunity features for one upcoming player-game."""
-    cursor_factory = getattr(connection, "cursor")
+    cursor_factory = connection.cursor
     with cursor_factory() as cursor:
         cursor.execute(
             ROLE_CONTEXT_SQL,
