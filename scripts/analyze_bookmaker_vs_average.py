@@ -118,19 +118,31 @@ def main() -> int:
         player_games = warehouse.execute(
             """
             select
-                season_code,
-                gamecode,
-                utc_date::date::text as game_date,
-                player_id,
-                player_name,
-                team_code,
-                points::float8,
-                seconds_official::float8
-            from warehouse.v_player_game
-            where season_code = 'E2024'
-              and utc_date::date between '2024-10-03' and '2024-11-20'
-              and not excluded_by_default
-            order by utc_date, gamecode, team_code, player_name
+                b.season_code,
+                b.gamecode,
+                g.utc_date::date::text as game_date,
+                b.player_id,
+                p.display_name as player_name,
+                b.team_code,
+                b.points::float8,
+                m.seconds_official::float8
+            from warehouse.raw_boxscore_player b
+            join warehouse.raw_game g
+              on g.season_code = b.season_code
+             and g.gamecode = b.gamecode
+            left join warehouse.player p
+              on p.player_id = b.player_id
+            left join warehouse.player_game_minutes m
+              on m.season_code = b.season_code
+             and m.gamecode = b.gamecode
+             and m.player_id = b.player_id
+            left join warehouse.game_quality q
+              on q.season_code = b.season_code
+             and q.gamecode = b.gamecode
+            where b.season_code = 'E2024'
+              and g.utc_date::date between '2024-10-03' and '2024-11-20'
+              and not coalesce(q.excluded_by_default, false)
+            order by g.utc_date, b.gamecode, b.team_code, p.display_name
             """
         ).fetchall()
 
