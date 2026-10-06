@@ -101,7 +101,7 @@ def test_three_aligned_domains_become_three_plus_signal_tier() -> None:
 def test_tier_summary_reports_directional_correction_hit_rate_not_market_hit_rate() -> None:
     actual = np.asarray([14.0, 8.0, 15.0, 7.0])
     naive = np.asarray([10.0, 10.0, 10.0, 10.0])
-    predicted = np.asarray([12.0, 9.0, 12.5, 9.0])
+    predicted = np.asarray([12.0, 9.0, 12.5, 11.0])
     fingerprints = [
         {"signal_tier": "3+", "fingerprint": "role_volume:+|rotation:+|availability:+"},
         {"signal_tier": "3+", "fingerprint": "role_volume:-|rotation:-|schedule_load:-"},
