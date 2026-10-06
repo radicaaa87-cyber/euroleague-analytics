@@ -421,6 +421,91 @@ def derive_new_games(
     )
 
 
+def sync_season_schedule(
+    connection: Any,
+    season_code: str,
+    schedule_games: Sequence[dict],
+) -> int:
+    """Mirror lightweight schedule facts, including future games.
+
+    This does not load box scores or derived rows.  It exists so forward-looking
+    pregame collection can see fixtures that raw_game intentionally does not
+    contain until they are played.
+    """
+    rows: list[tuple[Any, ...]] = []
+    for game in schedule_games:
+        local = game.get("local") or {}
+        road = game.get("road") or {}
+        local_club = local.get("club") or {}
+        road_club = road.get("club") or {}
+        phase = game.get("phaseType") or {}
+        season = game.get("season") or {}
+
+        home_code = str(local_club.get("code") or "").strip()
+        away_code = str(road_club.get("code") or "").strip()
+        if not home_code or not away_code:
+            raise ValueError(
+                f"{season_code} schedule game {game.get('gameCode')} has missing team code."
+            )
+
+        rows.append(
+            (
+                season_code,
+                int(game["gameCode"]),
+                str(season.get("competitionCode") or "").strip() or None,
+                str(phase.get("code") or "").strip() or None,
+                str(phase.get("name") or "").strip() or None,
+                int(game["round"]) if game.get("round") is not None else None,
+                str(game.get("roundName") or "").strip() or None,
+                game.get("played") is True,
+                str(game.get("gameStatus") or "").strip() or None,
+                game.get("utcDate"),
+                home_code,
+                str(local_club.get("name") or "").strip() or home_code,
+                away_code,
+                str(road_club.get("name") or "").strip() or away_code,
+                str((game.get("venue") or {}).get("name") or "").strip() or None,
+            )
+        )
+
+    if not rows:
+        return 0
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            insert into season_schedule_game (
+                season_code, gamecode, competition_code, phase_code, phase_name,
+                round_number, round_name, played, game_status, utc_date,
+                home_team_code, home_team_name, away_team_code, away_team_name,
+                venue_name, schedule_refreshed_at
+            )
+            values (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, now()
+            )
+            on conflict (season_code, gamecode) do update set
+                competition_code = excluded.competition_code,
+                phase_code = excluded.phase_code,
+                phase_name = excluded.phase_name,
+                round_number = excluded.round_number,
+                round_name = excluded.round_name,
+                played = excluded.played,
+                game_status = excluded.game_status,
+                utc_date = excluded.utc_date,
+                home_team_code = excluded.home_team_code,
+                home_team_name = excluded.home_team_name,
+                away_team_code = excluded.away_team_code,
+                away_team_name = excluded.away_team_name,
+                venue_name = excluded.venue_name,
+                schedule_refreshed_at = now()
+            """,
+            rows,
+        )
+    return len(rows)
+
+
 def record_season_progress(
     connection: Any,
     season_code: str,
@@ -485,6 +570,7 @@ def run_live_pipeline(
     gamecodes = tuple(int(game["gameCode"]) for game in new_games)
 
     if schedule_games:
+        sync_season_schedule(connection, season_code, schedule_games)
         record_season_progress(connection, season_code, len(schedule_games))
 
     roster_registrations = 0
