@@ -43,6 +43,7 @@ from euroleague.model_signal_regimes import (
     build_signal_fingerprints,
     _feature_column,
     classify_efficiency_cycles,
+    diagnostic_feature_columns,
     filter_noisy_signal_contributions,
     learn_efficiency_cycle_effects,
     learn_pattern_effects,
@@ -811,13 +812,19 @@ def _write_validation_predictions(
     naive: np.ndarray,
     predicted: np.ndarray,
     calibrated_predicted: np.ndarray,
+    efficiency_adjusted_predicted: np.ndarray,
     signal_fingerprints: list[dict[str, Any]],
+    signal_contributions: dict[str, np.ndarray],
     learned_pattern_effects: dict[str, dict[str, Any]],
     efficiency_cycle_labels: list[str],
-    cold_streak_games: np.ndarray,
+    learned_efficiency_cycle_effects: dict[str, dict[str, Any]],
+    diagnostic_features: list[str],
+    auxiliary_actual: dict[str, np.ndarray],
+    auxiliary_predicted: dict[str, np.ndarray],
 ) -> None:
+    """Write a full validation mart so signal analysis does not require retraining."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fields = (
+    identity_fields = (
         "season_code",
         "gamecode",
         "game_date",
@@ -827,16 +834,62 @@ def _write_validation_predictions(
         "opponent_team_code",
     )
     validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
+    contribution_fields = [
+        f"signal_{domain}_contribution_points" for domain in sorted(signal_contributions)
+    ]
+    auxiliary_fields = [
+        *sorted(auxiliary_actual),
+        *sorted(auxiliary_predicted),
+    ]
+    reserved = set(identity_fields) | {
+        "actual_points",
+        "naive_points",
+        "predicted_points",
+        "calibrated_predicted_points",
+        "efficiency_adjusted_predicted_points",
+        "pattern_calibration_correction_points",
+        "pattern_stable_direction",
+        "pattern_temporal_stability_passed",
+        "pattern_temporal_eligible_blocks",
+        "pattern_temporal_effect_points",
+        "pattern_temporal_block_means",
+        "efficiency_modifier_points",
+        "efficiency_temporal_stability_passed",
+        "efficiency_temporal_eligible_blocks",
+        "efficiency_temporal_effect_points",
+        "efficiency_temporal_block_means",
+        "prediction_error",
+        "absolute_error",
+        "signal_tier",
+        "supporting_signal_count",
+        "situation_fingerprint",
+        "supporting_domains",
+        "opposing_domains",
+        "efficiency_cycle_state",
+    }
+    diagnostic_fields = [name for name in diagnostic_features if name not in reserved]
+
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=[
-                *fields,
+                *identity_fields,
                 "actual_points",
                 "naive_points",
                 "predicted_points",
                 "calibrated_predicted_points",
+                "efficiency_adjusted_predicted_points",
                 "pattern_calibration_correction_points",
+                "pattern_stable_direction",
+                "pattern_temporal_stability_passed",
+                "pattern_temporal_eligible_blocks",
+                "pattern_temporal_effect_points",
+                "pattern_temporal_block_means",
+                "efficiency_modifier_points",
+                "efficiency_temporal_stability_passed",
+                "efficiency_temporal_eligible_blocks",
+                "efficiency_temporal_effect_points",
+                "efficiency_temporal_block_means",
                 "prediction_error",
                 "absolute_error",
                 "signal_tier",
@@ -845,46 +898,121 @@ def _write_validation_predictions(
                 "supporting_domains",
                 "opposing_domains",
                 "efficiency_cycle_state",
-                "pre_cold_streak_games",
+                *contribution_fields,
+                *auxiliary_fields,
+                *diagnostic_fields,
             ],
         )
         writer.writeheader()
-        for row, y_true, baseline, y_pred, calibrated_y_pred, signal_row, cycle_label, cold_streak in zip(
-            validation_rows,
-            actual,
-            naive,
-            predicted,
-            calibrated_predicted,
-            signal_fingerprints,
-            efficiency_cycle_labels,
-            cold_streak_games,
-            strict=True,
+
+        contribution_domains = sorted(signal_contributions)
+        for position, (
+            row,
+            y_true,
+            baseline,
+            y_pred,
+            calibrated_y_pred,
+            efficiency_y_pred,
+            signal_row,
+            cycle_label,
+        ) in enumerate(
+            zip(
+                validation_rows,
+                actual,
+                naive,
+                predicted,
+                calibrated_predicted,
+                efficiency_adjusted_predicted,
+                signal_fingerprints,
+                efficiency_cycle_labels,
+                strict=True,
+            )
         ):
-            learned = learned_pattern_effects.get(str(signal_row["fingerprint"]))
-            correction = (
-                float(learned["calibration_correction_points"])
-                if learned and bool(learned.get("stable_direction"))
+            learned_pattern = learned_pattern_effects.get(str(signal_row["fingerprint"]))
+            pattern_correction = (
+                float(learned_pattern["calibration_correction_points"])
+                if learned_pattern and bool(learned_pattern.get("stable_direction"))
                 else 0.0
             )
-            writer.writerow(
-                {
-                    **{field: row[index[field]] for field in fields},
-                    "actual_points": round(float(y_true), 4),
-                    "naive_points": round(float(baseline), 4),
-                    "predicted_points": round(float(y_pred), 4),
-                    "calibrated_predicted_points": round(float(calibrated_y_pred), 4),
-                    "pattern_calibration_correction_points": round(correction, 4),
-                    "prediction_error": round(float(y_pred - y_true), 4),
-                    "absolute_error": round(float(abs(y_pred - y_true)), 4),
-                    "signal_tier": signal_row["signal_tier"],
-                    "supporting_signal_count": signal_row["supporting_signal_count"],
-                    "situation_fingerprint": signal_row["fingerprint"],
-                    "supporting_domains": "|".join(signal_row["supporting_domains"]),
-                    "opposing_domains": "|".join(signal_row["opposing_domains"]),
-                    "efficiency_cycle_state": cycle_label,
-                    "pre_cold_streak_games": round(float(cold_streak), 4),
-                }
-            )
+            learned_efficiency = learned_efficiency_cycle_effects.get(str(cycle_label))
+            efficiency_modifier = float(efficiency_y_pred - y_pred)
+
+            record: dict[str, Any] = {
+                **{field: row[index[field]] for field in identity_fields},
+                "actual_points": round(float(y_true), 4),
+                "naive_points": round(float(baseline), 4),
+                "predicted_points": round(float(y_pred), 4),
+                "calibrated_predicted_points": round(float(calibrated_y_pred), 4),
+                "efficiency_adjusted_predicted_points": round(float(efficiency_y_pred), 4),
+                "pattern_calibration_correction_points": round(pattern_correction, 4),
+                "pattern_stable_direction": bool(
+                    learned_pattern and learned_pattern.get("stable_direction")
+                ),
+                "pattern_temporal_stability_passed": bool(
+                    learned_pattern and learned_pattern.get("temporal_stability_passed")
+                ),
+                "pattern_temporal_eligible_blocks": (
+                    int(learned_pattern.get("temporal_eligible_blocks", 0))
+                    if learned_pattern
+                    else 0
+                ),
+                "pattern_temporal_effect_points": round(
+                    float(learned_pattern.get("temporal_effect_points", 0.0))
+                    if learned_pattern
+                    else 0.0,
+                    4,
+                ),
+                "pattern_temporal_block_means": json.dumps(
+                    learned_pattern.get("temporal_block_mean_corrections", {})
+                    if learned_pattern
+                    else {},
+                    sort_keys=True,
+                ),
+                "efficiency_modifier_points": round(efficiency_modifier, 4),
+                "efficiency_temporal_stability_passed": bool(
+                    learned_efficiency
+                    and learned_efficiency.get("temporal_stability_passed")
+                ),
+                "efficiency_temporal_eligible_blocks": (
+                    int(learned_efficiency.get("temporal_eligible_blocks", 0))
+                    if learned_efficiency
+                    else 0
+                ),
+                "efficiency_temporal_effect_points": round(
+                    float(learned_efficiency.get("temporal_effect_points", 0.0))
+                    if learned_efficiency
+                    else 0.0,
+                    4,
+                ),
+                "efficiency_temporal_block_means": json.dumps(
+                    learned_efficiency.get("temporal_block_mean_residuals", {})
+                    if learned_efficiency
+                    else {},
+                    sort_keys=True,
+                ),
+                "prediction_error": round(float(y_pred - y_true), 4),
+                "absolute_error": round(float(abs(y_pred - y_true)), 4),
+                "signal_tier": signal_row["signal_tier"],
+                "supporting_signal_count": signal_row["supporting_signal_count"],
+                "situation_fingerprint": signal_row["fingerprint"],
+                "supporting_domains": "|".join(signal_row["supporting_domains"]),
+                "opposing_domains": "|".join(signal_row["opposing_domains"]),
+                "efficiency_cycle_state": cycle_label,
+            }
+
+            for domain in contribution_domains:
+                record[f"signal_{domain}_contribution_points"] = round(
+                    float(signal_contributions[domain][position]),
+                    4,
+                )
+            for name, values in auxiliary_actual.items():
+                record[name] = round(float(values[position]), 4)
+            for name, values in auxiliary_predicted.items():
+                record[name] = round(float(values[position]), 4)
+            for name in diagnostic_fields:
+                record[name] = row[index[name]]
+
+            writer.writerow(record)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1544,6 +1672,18 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
 
+    full_diagnostic_features = diagnostic_feature_columns(columns)
+    report["diagnostic_export"] = {
+        "mode": "full_validation_mart",
+        "pregame_feature_count": len(full_diagnostic_features),
+        "signal_domains": sorted(signal_contributions),
+        "includes_auxiliary_targets": ["minutes", "fga", "3pa", "fta"],
+        "purpose": (
+            "Analyze and tune signal logic from one completed validation run without "
+            "retraining merely to expose another diagnostic column."
+        ),
+    }
+
     _set_progress("write_artifacts")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1590,15 +1730,25 @@ def main(argv: list[str] | None = None) -> int:
         validation_naive,
         validation_prediction,
         calibrated_validation_prediction,
+        efficiency_cycle_adjusted_prediction,
         signal_fingerprints,
+        signal_contributions,
         learned_pattern_effects,
         validation_efficiency_cycle_labels,
-        _feature_column(
-            x[validation_mask],
-            feature_names,
-            "pre_cold_streak_games",
-            default=0.0,
-        ),
+        learned_efficiency_cycle_effects,
+        full_diagnostic_features,
+        {
+            "actual_3pa": three_pa_y[validation_mask],
+            "actual_fga": fga_y[validation_mask],
+            "actual_fta": fta_y[validation_mask],
+            "actual_minutes": minutes_y[validation_mask],
+        },
+        {
+            "predicted_3pa": predicted_3pa,
+            "predicted_fga": predicted_fga,
+            "predicted_fta": predicted_fta,
+            "predicted_minutes": predicted_minutes,
+        },
     )
 
     print(f"rows={json.dumps(report['rows'], sort_keys=True)}")
