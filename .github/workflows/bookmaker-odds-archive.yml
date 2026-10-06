@@ -23,6 +23,10 @@ on:
         required: false
         default: "150"
         type: string
+  push:
+    branches: [feat/acb-ingestion]
+    paths:
+      - .github/bookmaker-odds.request
   schedule:
     - cron: "23 8,12,16 * * *"
 
@@ -70,11 +74,21 @@ jobs:
           import os
           from datetime import date, timedelta
 
-          if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+          event = os.environ.get("GITHUB_EVENT_NAME")
+          if event == "schedule":
               start = date.today() - timedelta(days=14)
               finish = date.today()
               bookmakers = "mozzart,starbet"
               max_docs = "80"
+          elif event == "push":
+              import json
+              from pathlib import Path
+
+              request = json.loads(Path(".github/bookmaker-odds.request").read_text())
+              start = date.fromisoformat(request["from_date"])
+              finish = date.fromisoformat(request["to_date"])
+              bookmakers = request.get("bookmakers", "mozzart,starbet")
+              max_docs = str(request.get("max_docs", 150))
           else:
               start = date.fromisoformat(os.environ.get("INPUT_FROM_DATE") or "2024-09-01")
               finish_raw = os.environ.get("INPUT_TO_DATE") or ""
