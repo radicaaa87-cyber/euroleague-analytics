@@ -607,6 +607,27 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "lineup_stint" in sql
     assert "pre_l10_pbp_on_off_rating" in sql
     assert "pre_l5_pbp_primary_lineup_share" in sql
+    assert "player_top_pair_pregame" in sql
+    assert "pre_l5_top_pair_shared_minutes" in sql
+    assert "pre_l5_top_pair_net_rating" in sql
+    assert "pre_l5_top_pair_repeat_rate" in sql
+    assert "player_top_triple_pregame" in sql
+    assert "pre_l5_top_triple_shared_minutes" in sql
+    assert "pre_l5_top_triple_net_rating" in sql
+    assert "pre_l5_top_triple_repeat_rate" in sql
+    assert "player_top_lineup_pregame" in sql
+    assert "pre_l5_top_lineup_shared_minutes" in sql
+    assert "pre_l5_top_lineup_net_rating" in sql
+    assert "pre_l5_top_lineup_repeat_rate" in sql
+    assert "historical_context_events" in sql
+    assert "e.published_at < pf.game_tipoff_utc" in sql
+    assert "pf.game_tipoff_utc - interval '72 hours'" in sql
+    assert "pre_context_official_event_count" in sql
+    assert "pre_context_reported_event_count" in sql
+    assert "pre_self_out_score" in sql
+    assert "pre_self_doubt_score" in sql
+    assert "pre_teammate_out_vacated_minutes_l5" in sql
+    assert "pre_teammate_out_vacated_fga_l5" in sql
     assert "transition_offense" not in sql
     assert "bookmaker" not in sql
     assert "central_line" not in sql
