@@ -15,6 +15,7 @@ from euroleague.mcp import queries
 from euroleague.mcp.envelope import build_response
 from euroleague.mcp.resolve import resolve_player, resolve_season, resolve_team
 from euroleague.pregame_context import ROLE_CONTEXT_SQL
+from euroleague.teammate_synergy import TEAMMATE_SYNERGY_SQL
 from euroleague.travel import travel_context
 
 
@@ -490,6 +491,30 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
     if rows and acb_rows:
         rows[0]["acb_recent_form"] = acb_rows[0]
 
+    synergy_team_code: str | None = None
+    if target_context.get("target_team_code"):
+        synergy_team_code = str(target_context["target_team_code"])
+    elif rows and rows[0].get("last_team_code"):
+        synergy_team_code = str(rows[0]["last_team_code"])
+
+    cursor.execute(
+        TEAMMATE_SYNERGY_SQL,
+        (
+            cross_competition_cutoff,
+            season_code,
+            player_id,
+            synergy_team_code,
+            synergy_team_code,
+            20,
+            player_id,
+            player_id,
+            12,
+        ),
+    )
+    teammate_rows = queries._rows(cursor)
+    if rows:
+        rows[0]["teammate_pair_context"] = teammate_rows
+
     if arguments.get("opponent"):
         opponent_code = resolve_team(cursor, season_code, arguments["opponent"])
 
@@ -560,6 +585,10 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             "travel_context reports great-circle distance between nominal team home cities. "
             "It is a schedule travel-load proxy, not a claim about the actual flight path or "
             "a temporary neutral/home venue; unknown team codes stay null.",
+            "teammate_pair_context is descriptive, not causal. It combines actual shared "
+            "stint minutes and on-court team ratings with the target player's historical "
+            "PTS/min, FGA/min and minutes in games with versus without each teammate. Small "
+            "samples are labeled explicitly and every row is cut off before the target tipoff.",
             "The bookmaker line is intentionally excluded. Produce the projection first, "
             "then calculate EDGE against the central line.",
         ],
