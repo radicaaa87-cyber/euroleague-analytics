@@ -54,7 +54,13 @@ def main(argv: list[str] | None = None) -> int:
     split = report["split"]
     metrics = {
         "blind_test": report["blind_test"],
+        "naive_points_baseline": report.get("naive_points_baseline"),
+        "role_base_points": report.get("role_base_points"),
         "l10_points_baseline": report["l10_points_baseline"],
+        "mae_improvement_role_base_vs_naive": report.get(
+            "mae_improvement_role_base_vs_naive"
+        ),
+        "mae_improvement_vs_naive": report.get("mae_improvement_vs_naive"),
         "mae_improvement_vs_l10": report["mae_improvement_vs_l10"],
     }
     training_metadata = {
@@ -67,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         "candidate_results": report["candidate_results"],
         "validation_leaderboard": report["validation_leaderboard"],
         "selected_model": selected_model,
+        "prediction_architecture": report.get("prediction_architecture", {}),
+        "efficiency_priors": report.get("efficiency_priors", {}),
         "auxiliary_targets": report.get("auxiliary_targets", {}),
     }
 
