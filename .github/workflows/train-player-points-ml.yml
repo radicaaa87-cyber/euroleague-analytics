@@ -13,8 +13,20 @@ permissions:
 
 jobs:
   train:
-    runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,16 +41,43 @@ jobs:
           uv venv --python 3.14 .venv
       - name: Install training dependencies
         run: |
-          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-          uv pip install --python .venv\Scripts\python.exe -r requirements-ml.txt
-          uv pip install --python .venv\Scripts\python.exe -e .
-      - name: Benchmark four model families and blind-test the validation winner
+          uv pip install --python .venv/bin/python -r requirements.txt
+          uv pip install --python .venv/bin/python -r requirements-ml.txt
+          uv pip install --python .venv/bin/python -e .
+      - name: Create disposable training database
+        run: |
+          .venv/bin/python - <<'PY'
+          import psycopg
+          with psycopg.connect(
+              "postgresql://postgres:postgres@localhost:5433/postgres",
+              autocommit=True,
+          ) as connection:
+              connection.execute("create database euroleague_test")
+          PY
+      - name: Restore checksum-verified training archives
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        shell: powershell
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: >-
+          .venv/bin/python scripts/restore_training_archives.py
+          E2023 E2024 E2025 --cache-dir .training-cache
+      - name: Build disposable local historical warehouse
+        env:
+          EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+        run: >-
+          .venv/bin/python scripts/load_local_warehouse.py
+          E2023 E2024 E2025
+          --schema warehouse
+          --replace
+          --cache-dir .training-cache
+          --output ml-output/local_warehouse.json
+      - name: Benchmark four model families and blind-test the validation winner
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test?options=-csearch_path%3Dwarehouse
         run: |
-          New-Item -ItemType Directory -Force ml-output | Out-Null
-          .venv\Scripts\python.exe scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
+          mkdir -p ml-output
+          .venv/bin/python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
       - name: Persist candidate model
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -46,9 +85,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MODEL_VERSION: ${{ inputs.model_version }}
           MODEL_GIT_COMMIT: ${{ github.sha }}
-        shell: powershell
         run: |
-          .venv\Scripts\python.exe scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "$env:MODEL_VERSION" --git-commit "$env:MODEL_GIT_COMMIT"
+          .venv/bin/python scripts/register_trained_model.py --model ml-output/player_points_model.pkl --report ml-output/report.json --family player_points --version "$MODEL_VERSION" --git-commit "$MODEL_GIT_COMMIT"
       - name: Upload ML artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
