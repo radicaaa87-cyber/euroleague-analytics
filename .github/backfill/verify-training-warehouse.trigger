@@ -4,3 +4,4 @@ retry after Supabase API role mirror fix
 cache-enabled verifier run
 verify from cached warehouse snapshot
 rebuild snapshot after bookmaker migration hash change
+rebuild snapshot for model2 current migration hash 2026-10-06
