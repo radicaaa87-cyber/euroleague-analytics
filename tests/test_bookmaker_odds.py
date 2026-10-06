@@ -51,6 +51,43 @@ TENIS
     assert offers[0].source_event_code == "7068"
 
 
+def test_parse_mozzart_stops_before_foreign_league_rows_on_same_page() -> None:
+    text = """
+KOSARKA - IGRAČI
+EVROLIGA
+Broj poena igrača na meču
+20:30 7068 M.BELINELLI Vir 10.5 2.00 1.80
+20:30 7069 K.PUNTER Bar 13.5 1.90 1.90
+01:00 11235 T.HARRIS Det 15.5 1.90 1.90
+01:00 11236 J.DUREN Det 13.5 1.90 1.90
+01:00 11237 C.CUNNINGHAM Det 24.5 1.90 1.90
+"""
+    offers = parse_mozzart_player_points_pages([text])
+
+    assert [offer.participant_text for offer in offers] == [
+        "M.BELINELLI Vir",
+        "K.PUNTER Bar",
+    ]
+
+
+def test_parse_mozzart_does_not_carry_euroleague_state_to_next_page() -> None:
+    page_one = """
+KOSARKA - IGRAČI
+EVROLIGA
+Broj poena igrača na meču
+20:30 7068 M.BELINELLI Vir 10.5 2.00 1.80
+"""
+    page_two = """
+01:00 11235 T.HARRIS Det 15.5 1.90 1.90
+01:00 11236 J.DUREN Det 13.5 1.90 1.90
+"""
+
+    offers = parse_mozzart_player_points_pages([page_one, page_two])
+
+    assert len(offers) == 1
+    assert offers[0].participant_text == "M.BELINELLI Vir"
+
+
 def test_parse_starbet_combined_players_table_uses_first_points_triplet() -> None:
     text = """
 STAR BET
