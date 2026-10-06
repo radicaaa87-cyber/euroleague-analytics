@@ -8,6 +8,8 @@ from euroleague.model_signal_regimes import (
     ablation_signal_contributions,
     apply_pattern_effects,
     build_signal_fingerprints,
+    classify_efficiency_cycles,
+    learn_efficiency_cycle_effects,
     learn_pattern_effects,
     signal_domain_columns,
     summarize_pattern_stability,
@@ -239,3 +241,58 @@ def test_pattern_effect_application_preserves_row_specific_delta() -> None:
     )
 
     assert np.allclose(calibrated, [8.8, 8.7])
+
+
+def test_efficiency_cycle_classifier_separates_hot_start_regression_and_cold_decline() -> None:
+    features = [
+        "pre_last_hand_state",
+        "pre_last_ts_delta_vs_prior_l10",
+        "pre_hot_streak_games",
+        "pre_avg_hot_episode_games",
+        "pre_max_hot_episode_games",
+        "pre_l3_ts_proxy",
+        "pre_l5_ts_proxy",
+        "pre_l10_ts_proxy",
+        "pre_l3_fga",
+        "pre_l5_fga",
+        "pre_l10_fga",
+        "pre_l3_minutes",
+        "pre_l5_minutes",
+        "pre_l10_minutes",
+    ]
+    x = np.asarray(
+        [
+            [1, 0.08, 1, 3, 5, 0.66, 0.63, 0.58, 11, 10, 9, 28, 27, 26],
+            [1, 0.12, 4, 3, 5, 0.61, 0.66, 0.58, 8, 11, 10, 24, 28, 27],
+            [-1, -0.09, 0, 3, 5, 0.49, 0.52, 0.57, 7, 9, 10, 22, 25, 27],
+        ],
+        dtype=float,
+    )
+
+    labels = classify_efficiency_cycles(x=x, feature_names=features)
+
+    assert labels == ["hot_start", "hot_cooling_decline", "cold_decline"]
+
+
+def test_efficiency_cycle_effect_learning_can_make_mature_hot_a_minus_modifier() -> None:
+    actual = np.asarray([8.0, 9.0, 10.0, 11.0])
+    predicted = np.asarray([10.0, 10.0, 10.0, 10.0])
+    labels = [
+        "hot_regression_risk",
+        "hot_regression_risk",
+        "hot_start",
+        "hot_start",
+    ]
+
+    learned = learn_efficiency_cycle_effects(
+        actual=actual,
+        predicted=predicted,
+        labels=labels,
+        min_occurrences=2,
+        prior_strength=2.0,
+    )
+
+    regression = learned["hot_regression_risk"]
+    assert regression["mean_residual_points"] == -1.5
+    assert regression["shrinkage_weight"] == 0.5
+    assert regression["modifier_points"] == -0.75
