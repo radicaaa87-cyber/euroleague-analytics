@@ -41,6 +41,11 @@ from euroleague.model_validation import (
 from euroleague.role_projection import role_base_projection
 
 
+MIN_TRAIN_FEATURE_COVERAGE = 0.05
+POINT_RESIDUAL_SHRINKAGE_GRID = (0.25, 0.5, 0.75, 1.0)
+POINT_STABILITY_FOLDS = 3
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -61,6 +66,219 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--predictions", type=Path, required=True)
     return parser
+
+
+def _screen_training_features(
+    x: np.ndarray,
+    feature_names: list[str],
+    train_mask: np.ndarray,
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    """Drop only features that cannot be learned safely from E2023 itself."""
+    train_x = x[train_mask]
+    minimum_finite = max(3, math.ceil(len(train_x) * MIN_TRAIN_FEATURE_COVERAGE))
+    keep = np.ones(len(feature_names), dtype=bool)
+    dropped: list[dict[str, Any]] = []
+
+    for position, feature in enumerate(feature_names):
+        values = train_x[:, position]
+        finite = values[np.isfinite(values)]
+        reason: str | None = None
+        if len(finite) < minimum_finite:
+            reason = "insufficient_e2023_coverage"
+        elif float(np.max(finite) - np.min(finite)) <= 1e-12:
+            reason = "constant_in_e2023"
+
+        if reason is not None:
+            keep[position] = False
+            dropped.append(
+                {
+                    "feature": feature,
+                    "reason": reason,
+                    "finite_rows": int(len(finite)),
+                    "train_rows": int(len(train_x)),
+                }
+            )
+
+    return keep, dropped
+
+
+def _validation_fold_positions(
+    timestamps: list[Any],
+    validation_mask: np.ndarray,
+    *,
+    folds: int,
+) -> list[np.ndarray]:
+    validation_indices = np.flatnonzero(validation_mask)
+    positions = list(range(len(validation_indices)))
+    positions.sort(
+        key=lambda position: (
+            str(timestamps[int(validation_indices[position])]),
+            int(validation_indices[position]),
+        )
+    )
+    return [
+        np.asarray(chunk, dtype=int)
+        for chunk in np.array_split(np.asarray(positions, dtype=int), folds)
+        if len(chunk)
+    ]
+
+
+def _benchmark_point_residual_stable(
+    x: np.ndarray,
+    residual_target: np.ndarray,
+    actual_points: np.ndarray,
+    naive_points: np.ndarray,
+    train_mask: np.ndarray,
+    validation_mask: np.ndarray,
+    timestamps: list[Any],
+) -> dict[str, Any]:
+    """Choose the point model by E2024 temporal stability, not one aggregate MAE."""
+    validation_actual = actual_points[validation_mask]
+    validation_naive = naive_points[validation_mask]
+    naive_metrics = _metric_summary(validation_actual, validation_naive)
+    fold_positions = _validation_fold_positions(
+        timestamps,
+        validation_mask,
+        folds=POINT_STABILITY_FOLDS,
+    )
+
+    candidate_results: list[dict[str, Any]] = []
+    best_by_family: dict[str, tuple[tuple[Any, ...], dict[str, Any]]] = {}
+    selected: dict[str, Any] | None = None
+    selected_model: Any | None = None
+    selected_raw_delta: np.ndarray | None = None
+    selected_delta: np.ndarray | None = None
+    selected_key: tuple[Any, ...] | None = None
+
+    for spec in candidate_specs():
+        model = build_model(spec.family, spec.params)
+        model.fit(x[train_mask], residual_target[train_mask])
+        raw_delta = np.asarray(model.predict(x[validation_mask]), dtype=float)
+
+        for shrinkage in POINT_RESIDUAL_SHRINKAGE_GRID:
+            delta = raw_delta * shrinkage
+            prediction = validation_naive + delta
+            metrics = _metric_summary(validation_actual, prediction)
+            fold_metrics: list[dict[str, Any]] = []
+            improvements: list[float] = []
+
+            for fold_number, positions in enumerate(fold_positions, start=1):
+                model_mae = float(
+                    np.mean(np.abs(validation_actual[positions] - prediction[positions]))
+                )
+                naive_mae = float(
+                    np.mean(np.abs(validation_actual[positions] - validation_naive[positions]))
+                )
+                improvement = naive_mae - model_mae
+                improvements.append(improvement)
+                fold_metrics.append(
+                    {
+                        "fold": fold_number,
+                        "rows": int(len(positions)),
+                        "model_mae": model_mae,
+                        "naive_mae": naive_mae,
+                        "mae_improvement_vs_naive": improvement,
+                    }
+                )
+
+            positive_folds = sum(value > 0.0 for value in improvements)
+            median_improvement = float(np.median(improvements))
+            worst_improvement = float(min(improvements))
+            overall_improvement = float(naive_metrics["mae"] - metrics["mae"])
+            stability_gate_passed = (
+                overall_improvement > 0.0
+                and positive_folds >= 2
+                and median_improvement > 0.0
+            )
+            result = {
+                "candidate_id": spec.candidate_id,
+                "family": spec.family,
+                "params": spec.params,
+                "residual_shrinkage": shrinkage,
+                "validation": metrics,
+                "overall_mae_improvement_vs_naive": overall_improvement,
+                "positive_folds": positive_folds,
+                "median_fold_mae_improvement_vs_naive": median_improvement,
+                "worst_fold_mae_improvement_vs_naive": worst_improvement,
+                "temporal_folds": fold_metrics,
+                "stability_gate_passed": stability_gate_passed,
+            }
+            candidate_results.append(result)
+
+            rank_key = (
+                int(stability_gate_passed),
+                positive_folds,
+                median_improvement,
+                overall_improvement,
+                -metrics["mae"],
+                -abs(shrinkage - 0.5),
+            )
+            family_best = best_by_family.get(spec.family)
+            if family_best is None or rank_key > family_best[0]:
+                best_by_family[spec.family] = (rank_key, result)
+
+            if selected_key is None or rank_key > selected_key:
+                selected_key = rank_key
+                selected = result
+                selected_model = model
+                selected_raw_delta = raw_delta.copy()
+                selected_delta = delta.copy()
+
+    assert selected is not None
+    assert selected_model is not None
+    assert selected_raw_delta is not None
+    assert selected_delta is not None
+
+    leaderboard = [
+        {
+            "family": family,
+            "candidate_id": result["candidate_id"],
+            "params": result["params"],
+            "residual_shrinkage": result["residual_shrinkage"],
+            "validation": result["validation"],
+            "overall_mae_improvement_vs_naive": result[
+                "overall_mae_improvement_vs_naive"
+            ],
+            "positive_folds": result["positive_folds"],
+            "median_fold_mae_improvement_vs_naive": result[
+                "median_fold_mae_improvement_vs_naive"
+            ],
+            "worst_fold_mae_improvement_vs_naive": result[
+                "worst_fold_mae_improvement_vs_naive"
+            ],
+            "stability_gate_passed": result["stability_gate_passed"],
+        }
+        for family, (_, result) in best_by_family.items()
+    ]
+    leaderboard.sort(
+        key=lambda item: (
+            int(item["stability_gate_passed"]),
+            item["positive_folds"],
+            item["median_fold_mae_improvement_vs_naive"],
+            item["overall_mae_improvement_vs_naive"],
+            -item["validation"]["mae"],
+        ),
+        reverse=True,
+    )
+
+    return {
+        "candidate_results": candidate_results,
+        "validation_leaderboard": leaderboard,
+        "selected": selected,
+        "identity": runtime_model_identity(selected["family"]),
+        "model": selected_model,
+        "raw_validation_prediction": selected_raw_delta,
+        "validation_prediction": selected_delta,
+        "selection_policy": {
+            "name": "temporal_stability_first_v2",
+            "folds": POINT_STABILITY_FOLDS,
+            "residual_shrinkage_grid": list(POINT_RESIDUAL_SHRINKAGE_GRID),
+            "gate": (
+                "overall MAE beats naive, at least 2/3 E2024 chronological folds "
+                "beat naive, and median fold improvement is positive"
+            ),
+        },
+    }
 
 
 def _benchmark_validation_target(
@@ -307,22 +525,35 @@ def main(argv: list[str] | None = None) -> int:
     if not np.any(train_mask) or not np.any(validation_mask):
         raise RuntimeError("Training and validation splits must both contain rows.")
 
-    # A feature with zero observed values in E2023 cannot be learned without
-    # looking forward into validation. Drop only those columns, using the
-    # training season alone, and report them as coverage gaps rather than
-    # treating them as unimportant signals.
-    train_has_value = np.any(np.isfinite(x[train_mask]), axis=0)
+    # Model 2.0 screens features using E2023 only. E2024 is never consulted
+    # to decide whether a feature exists or varies, which avoids validation leakage.
+    train_feature_mask, dropped_feature_details = _screen_training_features(
+        x,
+        feature_names,
+        train_mask,
+    )
     dropped_untrainable_features = [
-        feature for feature, keep in zip(feature_names, train_has_value, strict=True) if not keep
+        item["feature"] for item in dropped_feature_details
     ]
     if dropped_untrainable_features:
-        x = x[:, train_has_value]
+        x = x[:, train_feature_mask]
         feature_names = [
-            feature for feature, keep in zip(feature_names, train_has_value, strict=True) if keep
+            feature
+            for feature, keep in zip(feature_names, train_feature_mask, strict=True)
+            if keep
         ]
 
     point_delta = y - naive
-    point_result = _benchmark_validation_target(x, point_delta, train_mask, validation_mask)
+    timestamps = [row[index["game_tipoff_utc"]] for row in rows]
+    point_result = _benchmark_point_residual_stable(
+        x,
+        point_delta,
+        y,
+        naive,
+        train_mask,
+        validation_mask,
+        timestamps,
+    )
     validation_delta = point_result["validation_prediction"]
     validation_naive = naive[validation_mask]
     validation_prediction = validation_naive + validation_delta
@@ -427,7 +658,7 @@ def main(argv: list[str] | None = None) -> int:
         residual_target=point_delta,
         train_mask=train_mask,
         test_mask=validation_mask,
-        real_test_prediction=validation_delta,
+        real_test_prediction=point_result["raw_validation_prediction"],
     )
     rolling = rolling_time_audit(
         model_factory=build_model,
@@ -437,7 +668,7 @@ def main(argv: list[str] | None = None) -> int:
         residual_target=point_delta,
         actual_points=y,
         naive_points=naive,
-        timestamps=[row[index["game_tipoff_utc"]] for row in rows],
+        timestamps=timestamps,
         eligible_mask=train_mask | validation_mask,
     )
     validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
@@ -471,6 +702,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     statuses = [placebo["status"], rolling["status"], segment["status"]]
+    if not point_result["selected"]["stability_gate_passed"]:
+        statuses.append("warn")
     controls_status = (
         "fail"
         if "fail" in statuses
@@ -501,6 +734,11 @@ def main(argv: list[str] | None = None) -> int:
         "features": feature_names,
         "dropped_untrainable_features": dropped_untrainable_features,
         "dropped_untrainable_feature_count": len(dropped_untrainable_features),
+        "dropped_feature_details": dropped_feature_details,
+        "training_feature_screen": {
+            "minimum_e2023_finite_coverage": MIN_TRAIN_FEATURE_COVERAGE,
+            "rule": "drop only sparse or constant features using E2023 training data",
+        },
         "feature_provenance": provenance_manifest(feature_names),
         "leakage_audit": leakage_audit,
         "candidate_results": point_result["candidate_results"],
@@ -508,8 +746,21 @@ def main(argv: list[str] | None = None) -> int:
         "selected_model": {
             **point_result["identity"],
             "candidate_id": point_result["selected"]["candidate_id"],
+            "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
+            "stability_gate_passed": point_result["selected"]["stability_gate_passed"],
         },
         "selected_params": point_result["selected"]["params"],
+        "selection_policy": point_result["selection_policy"],
+        "validation_temporal_stability": {
+            "positive_folds": point_result["selected"]["positive_folds"],
+            "median_fold_mae_improvement_vs_naive": point_result["selected"][
+                "median_fold_mae_improvement_vs_naive"
+            ],
+            "worst_fold_mae_improvement_vs_naive": point_result["selected"][
+                "worst_fold_mae_improvement_vs_naive"
+            ],
+            "folds": point_result["selected"]["temporal_folds"],
+        },
         "validation_points": validation_metrics,
         "naive_points_baseline": naive_metrics,
         "role_base_points": role_base_metrics,
@@ -594,6 +845,8 @@ def main(argv: list[str] | None = None) -> int:
                 "model_family": point_result["selected"]["family"],
                 "model_identity": point_result["identity"],
                 "selected_params": point_result["selected"]["params"],
+                "residual_shrinkage": point_result["selected"]["residual_shrinkage"],
+                "selection_policy": point_result["selection_policy"],
                 "features": feature_names,
                 "trained_seasons": [args.train_season],
                 "validation_season": args.validation_season,
