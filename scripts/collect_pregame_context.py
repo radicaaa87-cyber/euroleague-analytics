@@ -126,7 +126,7 @@ def _upcoming_games(connection: psycopg.Connection[Any]) -> list[UpcomingGame]:
                 home_team_name,
                 away_team_code,
                 away_team_name
-            from v_game
+            from season_schedule_game
             where not played
               and utc_date > now()
               and utc_date <= now() + interval '72 hours'
