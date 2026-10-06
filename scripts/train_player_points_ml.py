@@ -207,6 +207,43 @@ def _interval_metrics(
     }
 
 
+def _group_permutation_importance(
+    model: Any,
+    x: np.ndarray,
+    y: np.ndarray,
+    features: list[str],
+    provenance: list[dict[str, str]],
+    *,
+    repeats: int = 5,
+) -> list[dict[str, Any]]:
+    """Measure whole source families by shuffling their columns together."""
+    baseline_mae = float(mean_absolute_error(y, model.predict(x)))
+    family_indices: dict[str, list[int]] = {}
+    for idx, item in enumerate(provenance):
+        family_indices.setdefault(item["source_family"], []).append(idx)
+
+    rng = np.random.default_rng(42)
+    results: list[dict[str, Any]] = []
+    for family, indices in sorted(family_indices.items()):
+        deltas: list[float] = []
+        for _ in range(repeats):
+            permutation = rng.permutation(len(x))
+            shuffled = x.copy()
+            shuffled[:, indices] = x[permutation][:, indices]
+            shuffled_mae = float(mean_absolute_error(y, model.predict(shuffled)))
+            deltas.append(shuffled_mae - baseline_mae)
+        results.append(
+            {
+                "source_family": family,
+                "feature_count": len(indices),
+                "features": [features[index] for index in indices],
+                "mae_increase_mean": float(np.mean(deltas)),
+                "mae_increase_std": float(np.std(deltas)),
+            }
+        )
+    return sorted(results, key=lambda item: item["mae_increase_mean"], reverse=True)
+
+
 def _fetch_dataset(
     seasons: list[str],
     minutes_basis: str,
