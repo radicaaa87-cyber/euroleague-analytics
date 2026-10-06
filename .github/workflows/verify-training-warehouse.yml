@@ -97,10 +97,26 @@ jobs:
           python scripts/restore_training_archives.py \
             E2023 E2024 E2025 --cache-dir .training-cache &
           RESTORE_PID=$!
+          PREV_SIZE=-1
+          IDLE_TICKS=0
           while kill -0 "$RESTORE_PID" 2>/dev/null; do
-            echo "::notice::archive restore heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            NOW="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            CPU="$(ps -p "$RESTORE_PID" -o %cpu= | tr -d ' ' || true)"
+            SIZE="$(du -sb .training-cache 2>/dev/null | awk '{print $1}' || echo 0)"
+            echo "::notice::archive restore heartbeat $NOW cpu=${CPU:-0}% bytes=$SIZE"
             ps -p "$RESTORE_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
-            du -sh .training-cache 2>/dev/null || true
+            BUSY="$(awk -v cpu="${CPU:-0}" 'BEGIN { print (cpu >= 0.5) ? 1 : 0 }')"
+            if [ "$SIZE" = "$PREV_SIZE" ] && [ "$BUSY" -eq 0 ]; then
+              IDLE_TICKS=$((IDLE_TICKS + 1))
+            else
+              IDLE_TICKS=0
+            fi
+            if [ "$IDLE_TICKS" -ge 5 ]; then
+              echo "::warning::STALL WARNING: archive restore has shown no cache growth and <0.5% Python CPU for $((IDLE_TICKS * 2)) minutes."
+              ps aux --forest | head -80 || true
+              docker stats --no-stream || true
+            fi
+            PREV_SIZE="$SIZE"
             sleep 120
           done
           wait "$RESTORE_PID"
@@ -126,10 +142,26 @@ jobs:
             --cache-dir .training-cache \
             --output ml-output/local_warehouse.json &
           BUILD_PID=$!
+          PREV_SIZE=-1
+          IDLE_TICKS=0
           while kill -0 "$BUILD_PID" 2>/dev/null; do
-            echo "::notice::warehouse build heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            NOW="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            CPU="$(ps -p "$BUILD_PID" -o %cpu= | tr -d ' ' || true)"
+            SIZE="$(du -sb ml-output 2>/dev/null | awk '{print $1}' || echo 0)"
+            echo "::notice::warehouse build heartbeat $NOW cpu=${CPU:-0}% output_bytes=$SIZE"
             ps -p "$BUILD_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
-            du -sh ml-output 2>/dev/null || true
+            BUSY="$(awk -v cpu="${CPU:-0}" 'BEGIN { print (cpu >= 0.5) ? 1 : 0 }')"
+            if [ "$SIZE" = "$PREV_SIZE" ] && [ "$BUSY" -eq 0 ]; then
+              IDLE_TICKS=$((IDLE_TICKS + 1))
+            else
+              IDLE_TICKS=0
+            fi
+            if [ "$IDLE_TICKS" -ge 5 ]; then
+              echo "::warning::STALL WARNING: warehouse build has shown no output growth and <0.5% Python CPU for $((IDLE_TICKS * 2)) minutes."
+              ps aux --forest | head -80 || true
+              docker stats --no-stream || true
+            fi
+            PREV_SIZE="$SIZE"
             sleep 120
           done
           wait "$BUILD_PID"
