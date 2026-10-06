@@ -2096,7 +2096,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ot.team_feature_cutoff_time,
             ort.rotation_feature_cutoff_time,
             opt.position_feature_cutoff_time,
-            af.acb_feature_cutoff_time
+            af.acb_feature_cutoff_time,
+            hcf.context_feature_cutoff_time
         ) as feature_cutoff_time,
         pf.game_date,
         pf.player_id,
@@ -2263,6 +2264,47 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l5_top_lineup_net_rating,
         pf.pre_l5_top_lineup_repeat_rate,
 
+        coalesce(hcf.pre_context_event_count, 0)
+            as pre_context_event_count,
+        coalesce(hcf.pre_self_context_event_count, 0)
+            as pre_self_context_event_count,
+        coalesce(hcf.pre_teammate_context_event_count, 0)
+            as pre_teammate_context_event_count,
+        coalesce(hcf.pre_team_context_event_count, 0)
+            as pre_team_context_event_count,
+        coalesce(hcf.pre_context_official_event_count, 0)
+            as pre_context_official_event_count,
+        coalesce(hcf.pre_context_reported_event_count, 0)
+            as pre_context_reported_event_count,
+        coalesce(hcf.pre_context_weak_event_count, 0)
+            as pre_context_weak_event_count,
+        coalesce(hcf.pre_context_max_source_confidence, 0)
+            as pre_context_max_source_confidence,
+        coalesce(hcf.pre_context_max_severity, 0)
+            as pre_context_max_severity,
+        coalesce(hcf.pre_self_out_score, 0)
+            as pre_self_out_score,
+        coalesce(hcf.pre_self_doubt_score, 0)
+            as pre_self_doubt_score,
+        coalesce(hcf.pre_self_return_score, 0)
+            as pre_self_return_score,
+        coalesce(hcf.pre_self_role_up_score, 0)
+            as pre_self_role_up_score,
+        coalesce(hcf.pre_self_role_down_score, 0)
+            as pre_self_role_down_score,
+        coalesce(hcf.pre_teammate_out_score_sum, 0)
+            as pre_teammate_out_score_sum,
+        coalesce(hcf.pre_teammate_doubt_score_sum, 0)
+            as pre_teammate_doubt_score_sum,
+        coalesce(hcf.pre_teammate_out_vacated_minutes_l5, 0)
+            as pre_teammate_out_vacated_minutes_l5,
+        coalesce(hcf.pre_teammate_out_vacated_fga_l5, 0)
+            as pre_teammate_out_vacated_fga_l5,
+        coalesce(hcf.pre_teammate_doubt_vacated_minutes_l5, 0)
+            as pre_teammate_doubt_vacated_minutes_l5,
+        coalesce(hcf.pre_teammate_doubt_vacated_fga_l5, 0)
+            as pre_teammate_doubt_vacated_fga_l5,
+
         af.pre_acb_l5_games,
         af.pre_acb_l3_minutes,
         af.pre_acb_l5_minutes,
@@ -2371,6 +2413,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
       on af.season_code = pf.season_code
      and af.gamecode = pf.gamecode
      and af.player_id = pf.player_id
+    left join historical_context_features hcf
+      on hcf.season_code = pf.season_code
+     and hcf.gamecode = pf.gamecode
+     and hcf.player_id = pf.player_id
     left join team_features tt
       on tt.season_code = pf.season_code
      and tt.gamecode = pf.gamecode
