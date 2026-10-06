@@ -612,8 +612,11 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             abs(tg.points - tg.opponent_points) <= 5 as game_was_close,
             coalesce(gc.went_overtime, false) as game_went_overtime,
             p.points,
+            p.field_goals_made,
             p.field_goals_attempted,
+            p.three_pointers_made,
             p.three_pointers_attempted,
+            p.free_throws_made,
             p.free_throws_attempted,
             p.{seconds} as seconds_played,
             round(
@@ -1404,6 +1407,26 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 / nullif(sum(seconds_played) over w10, 0),
                 4
             ) as pre_l10_fga_per_minute,
+            round(
+                (
+                    sum(field_goals_made - three_pointers_made) over w10
+                )::numeric
+                / nullif(
+                    sum(field_goals_attempted - three_pointers_attempted) over w10,
+                    0
+                ),
+                4
+            ) as pre_l10_2p_pct,
+            round(
+                (sum(three_pointers_made) over w10)::numeric
+                / nullif(sum(three_pointers_attempted) over w10, 0),
+                4
+            ) as pre_l10_3p_pct,
+            round(
+                (sum(free_throws_made) over w10)::numeric
+                / nullif(sum(free_throws_attempted) over w10, 0),
+                4
+            ) as pre_l10_ft_pct,
 
             round(
                 avg(pbp_offensive_possessions::numeric) over w5, 3
@@ -1782,6 +1805,9 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_l10_ts_proxy,
         pf.pre_l10_points_per_minute,
         pf.pre_l10_fga_per_minute,
+        pf.pre_l10_2p_pct,
+        pf.pre_l10_3p_pct,
+        pf.pre_l10_ft_pct,
 
         pf.pre_l5_pbp_offensive_possessions,
         pf.pre_l10_pbp_offensive_possessions,
