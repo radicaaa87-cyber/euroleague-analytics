@@ -87,13 +87,23 @@ jobs:
 
       - name: Restore checksum-verified training archives
         if: steps.snapshot_cache.outputs.cache-hit != 'true' && steps.raw_cache.outputs.cache-hit != 'true'
+        timeout-minutes: 60
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: >-
-          python scripts/restore_training_archives.py
-          E2023 E2024 E2025 --cache-dir .training-cache
+        run: |
+          set -euo pipefail
+          python scripts/restore_training_archives.py \
+            E2023 E2024 E2025 --cache-dir .training-cache &
+          RESTORE_PID=$!
+          while kill -0 "$RESTORE_PID" 2>/dev/null; do
+            echo "::notice::archive restore heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            ps -p "$RESTORE_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
+            du -sh .training-cache 2>/dev/null || true
+            sleep 120
+          done
+          wait "$RESTORE_PID"
 
       - name: Save raw archive cache
         if: steps.snapshot_cache.outputs.cache-hit != 'true' && steps.raw_cache.outputs.cache-hit != 'true'
@@ -104,15 +114,25 @@ jobs:
 
       - name: Build disposable local historical warehouse
         if: steps.snapshot_cache.outputs.cache-hit != 'true'
+        timeout-minutes: 60
         env:
           EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
-        run: >-
-          python scripts/load_local_warehouse.py
-          E2023 E2024 E2025
-          --schema warehouse
-          --replace
-          --cache-dir .training-cache
-          --output ml-output/local_warehouse.json
+        run: |
+          set -euo pipefail
+          python scripts/load_local_warehouse.py \
+            E2023 E2024 E2025 \
+            --schema warehouse \
+            --replace \
+            --cache-dir .training-cache \
+            --output ml-output/local_warehouse.json &
+          BUILD_PID=$!
+          while kill -0 "$BUILD_PID" 2>/dev/null; do
+            echo "::notice::warehouse build heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            ps -p "$BUILD_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
+            du -sh ml-output 2>/dev/null || true
+            sleep 120
+          done
+          wait "$BUILD_PID"
 
       - name: Copy compact ACB and context data
         if: steps.snapshot_cache.outputs.cache-hit != 'true'
