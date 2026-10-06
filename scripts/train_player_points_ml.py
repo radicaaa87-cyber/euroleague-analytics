@@ -47,6 +47,7 @@ from euroleague.ml_benchmark import (
     runtime_model_identity,
 )
 from euroleague.model_training import model_feature_columns, training_dataset_sql
+from euroleague.role_projection import role_base_projection
 
 DEFAULT_TRAIN_SEASON = "E2023"
 DEFAULT_VALIDATION_SEASON = "E2024"
@@ -130,6 +131,11 @@ def _write_predictions(
     predicted_minutes: np.ndarray,
     actual_fga: np.ndarray,
     predicted_fga: np.ndarray,
+    actual_3pa: np.ndarray,
+    predicted_3pa: np.ndarray,
+    actual_fta: np.ndarray,
+    predicted_fta: np.ndarray,
+    role_base_points: np.ndarray,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -146,6 +152,12 @@ def _write_predictions(
         "predicted_minutes",
         "actual_fga",
         "predicted_fga",
+        "actual_3pa",
+        "predicted_3pa",
+        "actual_fta",
+        "predicted_fta",
+        "role_base_points",
+        "role_base_delta_vs_naive",
         "naive_baseline_points",
         "actual_delta_vs_naive",
         "predicted_delta_vs_naive",
@@ -167,6 +179,11 @@ def _write_predictions(
             m_pred,
             f_true,
             f_pred,
+            t_true,
+            t_pred,
+            ft_true,
+            ft_pred,
+            role_base,
         ) in zip(
             metadata,
             actual,
@@ -177,6 +194,11 @@ def _write_predictions(
             predicted_minutes,
             actual_fga,
             predicted_fga,
+            actual_3pa,
+            predicted_3pa,
+            actual_fta,
+            predicted_fta,
+            role_base_points,
             strict=True,
         ):
             writer.writerow(
@@ -186,6 +208,12 @@ def _write_predictions(
                     "predicted_minutes": round(float(m_pred), 4),
                     "actual_fga": round(float(f_true), 4),
                     "predicted_fga": round(float(f_pred), 4),
+                    "actual_3pa": round(float(t_true), 4),
+                    "predicted_3pa": round(float(t_pred), 4),
+                    "actual_fta": round(float(ft_true), 4),
+                    "predicted_fta": round(float(ft_pred), 4),
+                    "role_base_points": round(float(role_base), 4),
+                    "role_base_delta_vs_naive": round(float(role_base - baseline), 4),
                     "naive_baseline_points": round(float(baseline), 4),
                     "actual_delta_vs_naive": round(float(y_true - baseline), 4),
                     "predicted_delta_vs_naive": round(float(delta_pred), 4),
