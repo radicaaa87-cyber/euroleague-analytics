@@ -198,17 +198,29 @@ def _candidate_variants(display_name: str) -> set[str]:
         return set()
 
     variants = {normalized}
-    if len(tokens) >= 2:
+    name_orders: list[tuple[str, str]] = []
+
+    if "," in display_name:
+        surname_raw, given_raw = display_name.split(",", 1)
+        surname = normalize_name(surname_raw)
+        given = normalize_name(given_raw)
+        if given and surname:
+            name_orders.append((given, surname))
+            variants.add(f"{given} {surname}")
+    elif len(tokens) >= 2:
+        name_orders.append((tokens[0], " ".join(tokens[1:])))
         variants.add(" ".join([tokens[-1], *tokens[:-1]]))
         variants.add(" ".join(reversed(tokens)))
 
-        first = tokens[0]
-        surname = " ".join(tokens[1:])
+    for given, surname in name_orders:
+        given_tokens = given.split()
+        first = given_tokens[0] if given_tokens else ""
         compact_surname = surname.replace(" ", "")
         for width in range(1, min(3, len(first)) + 1):
             prefix = first[:width]
             variants.add(f"{prefix}.{surname}")
             variants.add(f"{prefix}.{compact_surname}")
+
     return {item.strip() for item in variants if item.strip()}
 
 
