@@ -74,7 +74,8 @@ jobs:
           --output ml-output/local_warehouse.json
       - name: Benchmark four model families and blind-test the validation winner
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test?options=-csearch_path%3Dwarehouse
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+          PGOPTIONS: "-c search_path=warehouse"
         run: |
           mkdir -p ml-output
           .venv/bin/python scripts/train_player_points_ml.py --train-season E2023 --validation-season E2024 --test-season E2025 --minutes-basis official --min-history-games 3 --report ml-output/report.json --model ml-output/player_points_model.pkl --predictions ml-output/e2025_predictions.csv
