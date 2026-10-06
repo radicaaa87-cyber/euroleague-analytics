@@ -47,6 +47,7 @@ POINT_STABILITY_FOLDS = 3
 ENGINE_FEATURE_PREFIXES = {
     "role2": "pre_role2_",
     "rotation": "pre_rotation_",
+    "transition": "pre_transition_",
 }
 
 
