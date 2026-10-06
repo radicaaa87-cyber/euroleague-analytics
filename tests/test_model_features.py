@@ -73,6 +73,16 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
             ),
             (
                 [
+                    "teammate_id",
+                    "teammate_name",
+                    "games_together",
+                    "shared_minutes",
+                    "scoring_association",
+                ],
+                [],
+            ),
+            (
+                [
                     "games_included",
                     "total_games",
                     "first_game",
@@ -121,6 +131,19 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
     )
     assert response["rows"][0]["pbp_history_games"] == 10
     assert response["rows"][0]["acb_recent_form"]["history_games"] == 0
+    assert "pair_game_stats" in cursor.statements[5]
+    assert cursor.parameters[5] == (
+        "2026-10-05T00:00:00+00:00",
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        "P009862",
+        12,
+    )
+    assert response["rows"][0]["teammate_pair_context"] == []
     assert response["minutes_basis"]["value"] == "official"
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
@@ -217,6 +240,32 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
             ),
             (
                 [
+                    "teammate_id",
+                    "teammate_name",
+                    "games_together",
+                    "games_without",
+                    "shared_minutes",
+                    "target_points_per_minute_delta",
+                    "target_fga_per_minute_delta",
+                    "shared_net_rating",
+                    "scoring_association",
+                ],
+                [
+                    (
+                        "PTEAM1",
+                        "TEAMMATE, ONE",
+                        7,
+                        3,
+                        122.5,
+                        0.081,
+                        0.034,
+                        6.7,
+                        "positive",
+                    )
+                ],
+            ),
+            (
+                [
                     "opponent_l5_games",
                     "opponent_l5_off_rating",
                     "opponent_l5_def_rating",
@@ -262,7 +311,19 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
         "P009862",
         dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
     )
-    assert cursor.parameters[6] == ("E2026", "OLY", "2026-10-10")
+    assert "pair_game_stats" in cursor.statements[6]
+    assert cursor.parameters[6] == (
+        dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
+        "E2026",
+        "P009862",
+        "BAR",
+        "BAR",
+        20,
+        "P009862",
+        "P009862",
+        12,
+    )
+    assert cursor.parameters[7] == ("E2026", "OLY", "2026-10-10")
     row = response["rows"][0]
     assert row["target_gamecode"] == 44
     assert row["opponent_team_code"] == "OLY"
@@ -273,6 +334,9 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert row["travel_context"]["target_venue_team_code"] == "BAR"
     assert row["travel_context"]["from_last_game_venue_team_code"] == "MAD"
     assert row["travel_context"]["air_km_from_last_game"] is not None
+    assert row["teammate_pair_context"][0]["teammate_id"] == "PTEAM1"
+    assert row["teammate_pair_context"][0]["scoring_association"] == "positive"
+    assert row["teammate_pair_context"][0]["shared_net_rating"] == 6.7
 
 
 def test_model_context_rejects_nonpositive_gamecode() -> None:
