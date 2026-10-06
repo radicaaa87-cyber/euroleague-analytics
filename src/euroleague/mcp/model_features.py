@@ -118,6 +118,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                 max(player_id) as player_id,
                 max(player_name) as player_name,
                 max(team_code) filter (where rn = 1) as last_team_code,
+                max(naive_baseline_points) as naive_baseline_points,
                 count(*) as history_games,
                 max(utc_date)::date as last_game_date,
 
