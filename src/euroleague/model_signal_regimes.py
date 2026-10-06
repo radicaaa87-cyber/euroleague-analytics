@@ -41,11 +41,7 @@ def _signal_domain(feature: str) -> str | None:
     ):
         return "availability"
 
-    if (
-        "matchup" in name
-        or "opponent_same_position" in name
-        or "opponent_rotation" in name
-    ):
+    if "matchup" in name or "opponent_same_position" in name or "opponent_rotation" in name:
         return "matchup_opponent"
 
     if (
@@ -56,12 +52,7 @@ def _signal_domain(feature: str) -> str | None:
     ) and not name.startswith("pre_role2_"):
         return "pace_environment"
 
-    if (
-        "top_pair" in name
-        or "top_triple" in name
-        or "top_lineup" in name
-        or "lineup" in name
-    ):
+    if "top_pair" in name or "top_triple" in name or "top_lineup" in name or "lineup" in name:
         return "lineup"
 
     if name.startswith("pre_transition_"):
@@ -144,11 +135,7 @@ def signal_domain_columns(feature_names: list[str]) -> dict[str, tuple[int, ...]
         if domain is not None:
             grouped[domain].append(index)
 
-    return {
-        domain: tuple(grouped[domain])
-        for domain in SIGNAL_DOMAIN_ORDER
-        if grouped[domain]
-    }
+    return {domain: tuple(grouped[domain]) for domain in SIGNAL_DOMAIN_ORDER if grouped[domain]}
 
 
 def _reference_medians(reference_x: np.ndarray) -> np.ndarray:
@@ -279,11 +266,7 @@ def summarize_signal_tiers(
 
     summary: dict[str, Any] = {}
     for tier in ("0", "1", "2", "3+"):
-        positions = [
-            index
-            for index, row in enumerate(fingerprints)
-            if row["signal_tier"] == tier
-        ]
+        positions = [index for index, row in enumerate(fingerprints) if row["signal_tier"] == tier]
         if not positions:
             summary[tier] = {
                 "rows": 0,
