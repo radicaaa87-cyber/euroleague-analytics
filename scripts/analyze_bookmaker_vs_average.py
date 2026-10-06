@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import re
 import unicodedata
 from collections import defaultdict
@@ -96,26 +97,22 @@ def _mae(rows: list[dict[str, float]], key: str) -> float:
 
 
 def main() -> int:
-    live_url = os.environ["LIVE_DATABASE_URL"]
     warehouse_url = os.environ["WAREHOUSE_DATABASE_URL"]
-
-    with psycopg.connect(live_url) as live:
-        offers = live.execute(
-            """
-            select
-                offer_id,
-                offer_date::text,
-                participant_text,
-                points_line::float8,
-                over_odds::float8,
-                under_odds::float8
-            from bookmaker_player_points_offer
-            where bookmaker = 'mozzart'
-              and offer_date = any(%s::date[])
-            order by offer_date, offer_id
-            """,
-            (list(OFFER_DATES),),
-        ).fetchall()
+    frozen_offers = json.loads(
+        Path("data/bookmaker_audit_mozzart_2024.json").read_text(encoding="utf-8")
+    )
+    offers = [
+        (
+            row["offer_id"],
+            row["offer_date"],
+            row["participant_text"],
+            row["points_line"],
+            row["over_odds"],
+            row["under_odds"],
+        )
+        for row in frozen_offers
+        if row["offer_date"] in OFFER_DATES
+    ]
 
     with psycopg.connect(warehouse_url) as warehouse:
         player_games = warehouse.execute(
