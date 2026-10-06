@@ -7,7 +7,6 @@ based on actual shared floor time before the target tipoff.
 
 from __future__ import annotations
 
-
 TEAMMATE_TRIPLE_SQL = """
 with cutoff as (
     select coalesce(%s::timestamptz, now()) as at
