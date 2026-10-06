@@ -1,0 +1,100 @@
+name: Verify ML training warehouse
+
+on:
+  push:
+    branches:
+      - feat/acb-ingestion
+    paths:
+      - ".github/backfill/verify-training-warehouse.trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-ml-training-warehouse
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Create disposable training database
+        run: |
+          python - <<'PY'
+          import psycopg
+          with psycopg.connect(
+              "postgresql://postgres:postgres@localhost:5433/postgres",
+              autocommit=True,
+          ) as connection:
+              connection.execute("create database euroleague_test")
+          PY
+
+      - name: Restore checksum-verified training archives
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: >-
+          python scripts/restore_training_archives.py
+          E2023 E2024 E2025 --cache-dir .training-cache
+
+      - name: Build disposable local historical warehouse
+        env:
+          EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+        run: >-
+          python scripts/load_local_warehouse.py
+          E2023 E2024 E2025
+          --schema warehouse
+          --replace
+          --cache-dir .training-cache
+          --output ml-output/local_warehouse.json
+
+      - name: Copy compact ACB and context data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+        run: python scripts/copy_training_context.py
+
+      - name: Execute training SQL smoke verification
+        env:
+          EL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
+        run: |
+          mkdir -p ml-output
+          python scripts/verify_local_training_warehouse.py | tee ml-output/warehouse-verification.json
+
+      - name: Upload verification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ml-training-warehouse-verification
+          path: ml-output/
+          if-no-files-found: error
+          retention-days: 30
