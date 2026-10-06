@@ -10,10 +10,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import faulthandler
 import json
 import math
 import os
 import pickle
+import sys
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -51,6 +55,76 @@ ENGINE_FEATURE_PREFIXES = {
 
 REGIME_GATE_FLOOR_GRID = (1.0, 0.65, 0.35)
 MATCHUP_SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75)
+
+PROGRESS_HEARTBEAT_SECONDS = 60
+PROGRESS_STALL_WARNING_SECONDS = 300
+PROGRESS_HARD_TIMEOUT_SECONDS = 1200
+
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_PHASE = "startup"
+_PROGRESS_STARTED = time.monotonic()
+
+
+def _set_progress(phase: str) -> None:
+    global _PROGRESS_PHASE, _PROGRESS_STARTED
+
+    now = time.monotonic()
+    with _PROGRESS_LOCK:
+        previous = _PROGRESS_PHASE
+        previous_started = _PROGRESS_STARTED
+        _PROGRESS_PHASE = phase
+        _PROGRESS_STARTED = now
+
+    print(
+        f"TRAIN_PHASE_END phase={previous} elapsed_seconds={now - previous_started:.1f}",
+        flush=True,
+    )
+    print(f"TRAIN_PHASE_START phase={phase}", flush=True)
+
+
+def _start_progress_watchdog() -> threading.Event:
+    stop = threading.Event()
+
+    def worker() -> None:
+        last_dump_key: tuple[str, int] | None = None
+        while not stop.wait(PROGRESS_HEARTBEAT_SECONDS):
+            with _PROGRESS_LOCK:
+                phase = _PROGRESS_PHASE
+                started = _PROGRESS_STARTED
+            elapsed = time.monotonic() - started
+            print(
+                f"TRAIN_HEARTBEAT phase={phase} elapsed_seconds={elapsed:.1f}",
+                flush=True,
+            )
+
+            if elapsed >= PROGRESS_STALL_WARNING_SECONDS:
+                bucket = int(elapsed // PROGRESS_STALL_WARNING_SECONDS)
+                dump_key = (phase, bucket)
+                if dump_key != last_dump_key:
+                    print(
+                        "TRAIN_STALL_WARNING "
+                        f"phase={phase} elapsed_seconds={elapsed:.1f}",
+                        flush=True,
+                    )
+                    faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+                    last_dump_key = dump_key
+
+            if elapsed >= PROGRESS_HARD_TIMEOUT_SECONDS:
+                print(
+                    "TRAIN_HARD_TIMEOUT "
+                    f"phase={phase} elapsed_seconds={elapsed:.1f} "
+                    f"limit_seconds={PROGRESS_HARD_TIMEOUT_SECONDS}",
+                    flush=True,
+                )
+                os._exit(124)
+
+    thread = threading.Thread(
+        target=worker,
+        name="training-progress-watchdog",
+        daemon=True,
+    )
+    thread.start()
+    return stop
 REGIME_FEATURE_CANDIDATES = (
     "pre_minutes_trend_l3_vs_l10",
     "pre_fga_trend_l3_vs_l10",
@@ -287,9 +361,11 @@ def _benchmark_point_residual_stable(
     selected_key: tuple[Any, ...] | None = None
 
     for spec in candidate_specs():
+        _set_progress(f"points_candidate:{spec.candidate_id}:{spec.family}:fit")
         model = build_model(spec.family, spec.params)
         model.fit(x[train_mask], residual_target[train_mask])
         raw_delta = np.asarray(model.predict(x[validation_mask]), dtype=float)
+        _set_progress(f"points_candidate:{spec.candidate_id}:{spec.family}:grid")
 
         for shrinkage in POINT_RESIDUAL_SHRINKAGE_GRID:
             for gate_floor in REGIME_GATE_FLOOR_GRID:
@@ -432,6 +508,8 @@ def _benchmark_validation_target(
     y: np.ndarray,
     train_mask: np.ndarray,
     validation_mask: np.ndarray,
+    *,
+    target_name: str,
 ) -> dict[str, Any]:
     candidate_results: list[dict[str, Any]] = []
     best_by_family: dict[str, dict[str, Any]] = {}
@@ -441,6 +519,7 @@ def _benchmark_validation_target(
     selected_mae = math.inf
 
     for spec in candidate_specs():
+        _set_progress(f"{target_name}_candidate:{spec.candidate_id}:{spec.family}:fit")
         model = build_model(spec.family, spec.params)
         model.fit(x[train_mask], y[train_mask])
         prediction = np.asarray(model.predict(x[validation_mask]), dtype=float)
@@ -623,6 +702,8 @@ def _write_validation_predictions(
 
 
 def main(argv: list[str] | None = None) -> int:
+    watchdog_stop = _start_progress_watchdog()
+    _set_progress("argument_validation")
     args = _parser().parse_args(argv)
     if len({args.train_season, args.validation_season, args.blind_season}) != 3:
         raise ValueError("train, validation and blind seasons must be different.")
@@ -637,15 +718,18 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     seasons = [*context_seasons, args.train_season, args.validation_season]
+    _set_progress("dataset_full")
     columns, rows = _fetch_dataset(seasons, args.minutes_basis, args.min_history_games)
     if not rows:
         raise RuntimeError("Validation training query returned no rows.")
 
+    _set_progress("dataset_train_prefix")
     train_columns, train_rows = _fetch_dataset(
         [*context_seasons, args.train_season],
         args.minutes_basis,
         args.min_history_games,
     )
+    _set_progress("leakage_audits")
     cutoff_audit = assert_feature_cutoffs_before_tipoff(columns, rows)
     prefix_audit = assert_prefix_invariance(train_columns, train_rows, columns, rows)
     leakage_audit = {
@@ -656,6 +740,7 @@ def main(argv: list[str] | None = None) -> int:
         "blind_season_queried": False,
     }
 
+    _set_progress("feature_matrix")
     feature_names = model_feature_columns(columns)
     enabled_engines = tuple(dict.fromkeys(args.enabled_engine))
     all_engine_prefixes = tuple(ENGINE_FEATURE_PREFIXES.values())
@@ -705,6 +790,7 @@ def main(argv: list[str] | None = None) -> int:
 
     point_delta = y - naive
     timestamps = [row[index["game_tipoff_utc"]] for row in rows]
+    _set_progress("regime_gate")
     regime_gate = _fit_regime_gate(
         x,
         feature_names,
@@ -712,6 +798,7 @@ def main(argv: list[str] | None = None) -> int:
         train_mask,
         validation_mask,
     )
+    _set_progress("matchup_adjustment")
     matchup_adjustment = _fit_matchup_adjustment(
         x,
         feature_names,
@@ -719,6 +806,7 @@ def main(argv: list[str] | None = None) -> int:
         train_mask,
         validation_mask,
     )
+    _set_progress("points_benchmark")
     point_result = _benchmark_point_residual_stable(
         x,
         point_delta,
@@ -758,10 +846,34 @@ def main(argv: list[str] | None = None) -> int:
         where=minutes_y > 0,
     )
 
-    minutes_result = _benchmark_validation_target(x, minutes_y, train_mask, validation_mask)
-    fga_result = _benchmark_validation_target(x, fga_per_minute, train_mask, validation_mask)
-    three_result = _benchmark_validation_target(x, three_share, train_mask, validation_mask)
-    fta_result = _benchmark_validation_target(x, fta_per_minute, train_mask, validation_mask)
+    minutes_result = _benchmark_validation_target(
+        x,
+        minutes_y,
+        train_mask,
+        validation_mask,
+        target_name="minutes",
+    )
+    fga_result = _benchmark_validation_target(
+        x,
+        fga_per_minute,
+        train_mask,
+        validation_mask,
+        target_name="fga_rate",
+    )
+    three_result = _benchmark_validation_target(
+        x,
+        three_share,
+        train_mask,
+        validation_mask,
+        target_name="three_share",
+    )
+    fta_result = _benchmark_validation_target(
+        x,
+        fta_per_minute,
+        train_mask,
+        validation_mask,
+        target_name="fta_rate",
+    )
 
     predicted_minutes = np.clip(minutes_result["validation_prediction"], 0.0, 50.0)
     predicted_fga_rate = np.clip(fga_result["validation_prediction"], 0.0, 1.5)
@@ -819,6 +931,7 @@ def main(argv: list[str] | None = None) -> int:
         dtype=float,
     )
 
+    _set_progress("feature_importance")
     ranked_importance, source_family_importance, grouped_source_importance = _rank_importance(
         point_result["model"],
         x[validation_mask],
@@ -826,6 +939,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_names,
     )
 
+    _set_progress("placebo_audit")
     placebo = placebo_target_audit(
         model_factory=build_model,
         family=point_result["selected"]["family"],
@@ -836,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
         test_mask=validation_mask,
         real_test_prediction=point_result["raw_validation_prediction"],
     )
+    _set_progress("rolling_time_audit")
     rolling = rolling_time_audit(
         model_factory=build_model,
         family=point_result["selected"]["family"],
@@ -861,6 +976,7 @@ def main(argv: list[str] | None = None) -> int:
         else ("stable" if value <= q33 else ("medium" if value <= q67 else "volatile"))
         for value in volatility_values
     ]
+    _set_progress("segment_stability_audit")
     segment = segment_stability_audit(
         actual=y[validation_mask],
         predicted=validation_prediction,
@@ -1038,6 +1154,7 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
 
+    _set_progress("write_artifacts")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     args.model.parent.mkdir(parents=True, exist_ok=True)
@@ -1093,7 +1210,9 @@ def main(argv: list[str] | None = None) -> int:
     print("source_family_importance=" + json.dumps(source_family_importance[:10], sort_keys=True))
     print("grouped_source_importance=" + json.dumps(grouped_source_importance[:10], sort_keys=True))
     print(f"validation_controls={json.dumps(report['validation_controls'], sort_keys=True)}")
-    print("blind_test_opened=false")
+    print("blind_test_opened=false", flush=True)
+    _set_progress("complete")
+    watchdog_stop.set()
     return 0 if controls_status != "fail" else 2
 
 
