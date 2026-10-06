@@ -5194,3 +5194,54 @@ migration remain separate tasks with their own tests and owner approval.
 alone. A persistent identity row must retain every original source id and the
 evidence used to approve the link. Ambiguous or incomplete evidence stays in a
 review state rather than being guessed.
+
+## 88. MODEL 10 situation signals are independent basketball domains, not feature counts
+
+**Decided 2026-10-06 by the owner**, while continuing player-points model
+development from the locked run-9 checkpoint.
+
+**Decision.** The run-9 player-points predictor remains the frozen baseline.
+MODEL 10 adds an explanatory and calibration layer that groups correlated
+pre-game features into independent basketball situation domains before assigning
+a signal count. The current domains are role/volume, rotation,
+availability/absence, matchup/opponent, pace/environment, schedule/load,
+lineup combinations, efficiency state, and season/team transition.
+
+A signal is not one feature. Multiple features that describe the same mechanism
+(for example minutes trend, FGA trend and option rank all describing a role
+change) count as one role/volume confirmation. For each validation row, the
+selected model is re-scored after one domain is neutralized to the training
+median. The change in prediction is that domain's local contribution for that
+row. The separately learned matchup adjustment is folded into the same matchup
+domain so it is not hidden outside the fingerprint.
+
+MODEL 10 stores a per-row situation fingerprint and a 0/1/2/3+ count of
+independent domains that support the model's correction direction. It also
+reports repeated fingerprints and their historical directional reliability.
+
+**Why.** Global feature importance answers which inputs matter on average but
+does not answer why one player's line moved today. The betting model needs
+repeatable basketball situations: role expansion after an absence, rotation
+promotion, workload pressure, a favorable matchup, or another mechanism that
+has occurred before. Counting correlated columns as separate confirmations
+would create false confidence.
+
+**Validation boundary.** The current repeatability metric is whether the model
+correction from the leakage-safe naive projection moved in the same direction
+as the realized scoring change. It is **not bookmaker-line hit rate**. The
+owner's intended calibration target is that the strongest 3+ class should
+eventually exceed roughly 58% against real central bookmaker lines on a locked
+out-of-sample sample. That claim cannot be made until historical bookmaker
+margins are joined with timestamp-safe provenance and evaluated without
+retuning the same sample.
+
+**What this does not establish.** Domain ablation is an attribution diagnostic,
+not proof of causality. Correlated domains can still interact, training medians
+are a neutral-reference convention rather than a counterfactual truth, and a
+repeated fingerprint can be too rare to generalize. MODEL 10 therefore remains
+a validation layer until repeated patterns survive an untouched sample.
+
+**Condition.** No 1/2/3+ tier may be described as a betting hit-rate tier until
+it has been measured against locked bookmaker central lines. No rule may be
+retuned from the blind season after its outcomes are opened.
+
