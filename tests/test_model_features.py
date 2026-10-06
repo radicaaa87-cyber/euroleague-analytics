@@ -95,6 +95,123 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
 
+
+def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None:
+    cursor = RecordingCursor(
+        [
+            (["season_code"], [("E2026",)]),
+            (["player_id"], [("P009862",)]),
+            (
+                ["player_id", "player_name", "history_games", "l10_minutes"],
+                [("P009862", "PUNTER, KEVIN", 10, 25.1)],
+            ),
+            (
+                [
+                    "pbp_history_games",
+                    "l10_pbp_offensive_possessions",
+                    "l10_pbp_stint_count",
+                ],
+                [(10, 48.2, 22.1)],
+            ),
+            (
+                [
+                    "target_tipoff_utc",
+                    "target_team_code",
+                    "opponent_team_code",
+                    "is_home",
+                    "self_out_score",
+                    "self_doubt_score",
+                    "self_max_source_confidence",
+                    "teammate_out_vacated_minutes_l5",
+                    "teammate_out_vacated_fga_l5",
+                    "same_position_out_vacated_minutes_l5",
+                    "teammate_max_source_confidence",
+                    "context_max_source_confidence",
+                    "context_feature_cutoff_time",
+                ],
+                [
+                    (
+                        dt.datetime(2026, 10, 10, 18, 0, tzinfo=dt.UTC),
+                        "BAR",
+                        "OLY",
+                        True,
+                        0,
+                        0,
+                        0.95,
+                        18.4,
+                        6.2,
+                        12.1,
+                        0.95,
+                        0.95,
+                        dt.datetime(2026, 10, 10, 9, 0, tzinfo=dt.UTC),
+                    )
+                ],
+            ),
+            (
+                [
+                    "opponent_l5_games",
+                    "opponent_l5_off_rating",
+                    "opponent_l5_def_rating",
+                    "opponent_l5_possessions",
+                    "opponent_last_game_date",
+                ],
+                [(5, 118.2, 109.7, 71.4, "2026-10-08")],
+            ),
+            (
+                [
+                    "games_included",
+                    "total_games",
+                    "first_game",
+                    "last_game",
+                    "scheduled_games",
+                    "last_loaded_at",
+                ],
+                [(30, 30, "2026-09-24", "2026-10-02", 380, None)],
+            ),
+            (["reason", "games"], []),
+            (["games"], [(0,)]),
+        ]
+    )
+
+    response = get_player_model_context(
+        cursor,
+        {
+            "season": "E2026",
+            "player": "P009862",
+            "gamecode": 44,
+            "as_of_date": "2026-10-10",
+        },
+    )
+
+    assert "pregame_context_event" in cursor.statements[4]
+    assert cursor.parameters[4] == {
+        "season_code": "E2026",
+        "gamecode": 44,
+        "player_id": "P009862",
+    }
+    assert cursor.parameters[5] == ("E2026", "OLY", "2026-10-10")
+    row = response["rows"][0]
+    assert row["target_gamecode"] == 44
+    assert row["opponent_team_code"] == "OLY"
+    assert row["pregame_role_context"]["teammate_out_vacated_minutes_l5"] == 18.4
+    assert row["pregame_role_context"]["context_max_source_confidence"] == 0.95
+
+
+def test_model_context_rejects_nonpositive_gamecode() -> None:
+    cursor = RecordingCursor(
+        [
+            (["season_code"], [("E2026",)]),
+            (["player_id"], [("P009862",)]),
+        ]
+    )
+    with pytest.raises(ValueError, match="positive integer"):
+        get_player_model_context(
+            cursor,
+            {"season": "E2026", "player": "P009862", "gamecode": 0},
+        )
+    assert len(cursor.statements) == 2
+
+
 def test_model_context_rejects_a_short_lookback_before_summary_query() -> None:
     cursor = RecordingCursor(
         [
