@@ -1,0 +1,103 @@
+{
+  "checkpoint": "player-points-run9-2026-10-06",
+  "status": "LOCKED",
+  "github": {
+    "workflow_run_id": 37497836690,
+    "workflow_run_number": 9,
+    "source_commit": "24da259d004100d7c67126f1570717fc8d179eba",
+    "locked_source_branch": "checkpoint/player-points-run9-2026-10-06",
+    "artifact_id": 11429330636
+  },
+  "data": {
+    "context_seasons": [
+      "E2022"
+    ],
+    "train_season": "E2023",
+    "validation_season": "E2024",
+    "blind_reserved": [
+      "E2025"
+    ],
+    "blind_test_opened": false,
+    "rows": {
+      "all": 12132,
+      "train": 5799,
+      "validation": 6333
+    },
+    "feature_count": 181,
+    "enabled_engines": [
+      "role2",
+      "rotation"
+    ]
+  },
+  "selected_model": {
+    "candidate_id": "xgb_1",
+    "family": "xgboost",
+    "framework_version": "3.4.1",
+    "params": {
+      "colsample_bytree": 0.9,
+      "learning_rate": 0.04,
+      "max_depth": 3,
+      "min_child_weight": 5,
+      "n_estimators": 400,
+      "reg_alpha": 0,
+      "reg_lambda": 2,
+      "subsample": 0.9
+    },
+    "residual_shrinkage": 0.5,
+    "regime_gate_floor": 1,
+    "matchup_shrinkage": 0,
+    "stability_gate_passed": true
+  },
+  "validation": {
+    "mae": 4.043685558853671,
+    "rmse": 5.216609409216439,
+    "mean_error": -0.21598253112580804,
+    "within_2_points": 0.31580609505763463,
+    "within_3_points": 0.46391915363966524,
+    "within_4_points": 0.5910311069003632,
+    "naive_mae": 4.072902100110532,
+    "role_base_mae": 4.075196733383634,
+    "temporal_folds": [
+      {
+        "fold": 1,
+        "rows": 2111,
+        "model_mae": 4.153917897775265,
+        "naive_mae": 4.206737565135007,
+        "improvement": 0.052819667359742084
+      },
+      {
+        "fold": 2,
+        "rows": 2111,
+        "model_mae": 3.976307431884071,
+        "naive_mae": 4.008417337754619,
+        "improvement": 0.03210990587054763
+      },
+      {
+        "fold": 3,
+        "rows": 2111,
+        "model_mae": 4.000831346901676,
+        "naive_mae": 4.003551397441971,
+        "improvement": 0.0027200505402946717
+      }
+    ],
+    "positive_temporal_folds": 3,
+    "median_fold_improvement": 0.03210990587054763
+  },
+  "regime_gate": {
+    "selected_floor": 1,
+    "validation_high_regime_share": 0.23795989262592768,
+    "validation_score_mean": 0.6008936684272093
+  },
+  "matchup_adjustment": {
+    "selected_shrinkage": 0,
+    "validation_delta_abs_mean": 0.43902673630336975,
+    "validation_delta_mean": 0.08662239523397199
+  },
+  "artifact_sha256": {
+    "zip": "af26067836c8131850390005694475f9556fcaac7302f8ad344f89deab4fced4",
+    "validation_report_json": "45199c38c1013c7b9083e697aeaf972bdf435a59daac19e4a464a618b832e0d5",
+    "validation_predictions_csv": "eb738a9b4c2323e393b615e0d310180fef32477f5cb552663c23e9f13b791d2e",
+    "validation_candidate_pkl": "2fd62a2712a07bcafbe26890bcbd88b0b675e8909fb9a8cf40326a84c09adc3b"
+  },
+  "note": "Locked before opening E2025 blind season. Later training-speed optimizations are not part of this checkpoint."
+}

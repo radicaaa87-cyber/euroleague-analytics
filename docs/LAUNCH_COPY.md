@@ -44,10 +44,10 @@ Pre-drafted social announcement threads and launch posts in English for the publ
 > 📍 41,524 field goal attempts with verified court coordinates in E2024
 > 🗄️ Historical archive backfill running with a byte-for-byte restore gate on every completed season
 
-### Tweet 5 (17 MCP Tools for AI Assistants)
+### Tweet 5 (18 MCP Tools for AI Assistants)
 > Designed from scratch for LLMs:
 >
-> 17 read-only `el_` tools provide focused responses with strict token-aware pagination.
+> 18 read-only `el_` tools provide focused responses with strict token-aware pagination.
 >
 > Claude Desktop or Cursor can analyze lineup net ratings, Four Factors, and shot distributions through simple natural language.
 
@@ -72,7 +72,7 @@ Pre-drafted social announcement threads and launch posts in English for the publ
 > • Exact possession counting across 5 verified possession-ending criteria
 > • 5-man lineup reconstruction across all substitution batches (99.54% exact second-level player minute match)
 > • Court shot attempts with normalized half-court spatial coordinates (41,524 verified in E2024)
-> • 17 specialized, read-only MCP tools connecting the warehouse directly to AI assistants like Claude
+> • 18 specialized, read-only MCP tools connecting the warehouse directly to AI assistants like Claude
 > • 100% score reconciliation across 732 loaded games in E2024 and E2025
 >
 > The entire codebase, database migration history, and dual-path test suite are open source under the MIT License.

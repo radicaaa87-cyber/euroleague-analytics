@@ -12,6 +12,7 @@ from euroleague.storage_watch import (
     DATABASE_CEILING_BYTES,
     DATABASE_STOP_BYTES,
     DATABASE_WARNING_BYTES,
+    EL_GAME_COST_RELATIONS,
     LEVEL_OK,
     LEVEL_STOP,
     LEVEL_WARNING,
@@ -176,6 +177,17 @@ class _RoutingConnection:
 
     def cursor(self) -> _RoutingCursor:
         return _RoutingCursor(self)
+
+
+def test_el_per_game_cost_excludes_acb_staging_relations() -> None:
+    assert "game_event" in EL_GAME_COST_RELATIONS
+    assert "raw_game" in EL_GAME_COST_RELATIONS
+    assert "acb_event" not in EL_GAME_COST_RELATIONS
+    assert "acb_player_game" not in EL_GAME_COST_RELATIONS
+
+    connection = _RoutingConnection(264_334_483, 732)
+    read_per_game_cost(connection)
+    assert "tablename = any" in " ".join(connection.queries).lower()
 
 
 def test_the_per_game_cost_is_public_bytes_over_games_loaded() -> None:

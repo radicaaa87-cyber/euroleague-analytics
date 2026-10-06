@@ -116,6 +116,7 @@ def test_zero_game_live_run_loads_schedule_dimensions_and_cached_rosters(
         "load_cached_roster",
         lambda connection, consumed_cache, season: calls.append("roster") or 203,
     )
+    monkeypatch.setattr(live_module, "sync_season_schedule", lambda *args: 380)
     monkeypatch.setattr(live_module, "record_season_progress", lambda *args: None)
 
     summary = run_live_pipeline(object(), cache, "E2026", progress=lambda line: None)
@@ -284,6 +285,7 @@ def test_a_successful_live_load_records_the_exact_consumed_source_versions(monke
     connection = object()
 
     monkeypatch.setattr(live_module, "loaded_gamecodes", lambda connection, season: set())
+    monkeypatch.setattr(live_module, "sync_season_schedule", lambda *args: 1)
     monkeypatch.setattr(live_module, "record_season_progress", lambda *args: None)
     monkeypatch.setattr(live_module, "load_new_raw_games", lambda *args, **kwargs: {})
     monkeypatch.setattr(live_module, "derive_new_games", lambda *args, **kwargs: {})

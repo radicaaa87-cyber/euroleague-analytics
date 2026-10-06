@@ -30,8 +30,12 @@ ALL_E2024_EVENT_TYPES = {
     "CM",
     "CMD",
     "CMT",
+    "CMT1",
     "CMTI",
     "CMU",
+    "CMU_D",
+    "CMU_DI",
+    "CMU_FL",
     "D",
     "EG",
     "EP",
@@ -87,7 +91,7 @@ def _event(
 NON_E2024_EVENT_TYPES = {"TPOFF", "F", "BF", "CMU_D", "CMU_DI", "CMU_FL", "CMT1"}
 
 
-def test_vocabulary_explicitly_classifies_all_31_e2024_event_types() -> None:
+def test_vocabulary_explicitly_classifies_all_observed_event_types() -> None:
     """Break caught: a newly observed type is silently ignored by the counter."""
     assert set(EVENT_ROLES) == ALL_E2024_EVENT_TYPES | NON_E2024_EVENT_TYPES
     assert sum(role is EventRole.ENDING for role in EVENT_ROLES.values()) == 5

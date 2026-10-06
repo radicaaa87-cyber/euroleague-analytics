@@ -183,6 +183,11 @@ def test_run_live_pipeline_orchestration_for_competitions(
     monkeypatch.setattr(live_module, "loaded_gamecodes", lambda conn, season: set())
     monkeypatch.setattr(
         live_module,
+        "sync_season_schedule",
+        lambda conn, season, games: len(games),
+    )
+    monkeypatch.setattr(
+        live_module,
         "record_season_progress",
         lambda conn, season, count: recorded_progress.append(
             (season, competition_for_season_code(season), count)

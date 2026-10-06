@@ -249,8 +249,8 @@ def _load_entry_point():
     return module
 
 
-def test_the_entry_point_registers_all_seventeen_tools_without_connecting():
+def test_the_entry_point_registers_all_eighteen_tools_without_connecting():
     module = _load_entry_point()
     registry = module.build_tool_registry(lambda: None)
-    assert len(registry) == 17
+    assert len(registry) == 18
     assert all(name.startswith("el_") for name in registry)

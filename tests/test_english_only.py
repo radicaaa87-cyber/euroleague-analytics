@@ -220,15 +220,27 @@ def test_the_website_exemption_covers_pages_and_nothing_else() -> None:
 
 def test_all_tracked_files_are_english_only() -> None:
     """Scan every tracked file in git for Turkish characters and words."""
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    tracked_files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    assert len(tracked_files) > 50, "git ls-files returned unexpectedly few files"
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        tracked_files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
+    except FileNotFoundError, subprocess.CalledProcessError:
+        excluded_parts = {".git", ".venv", ".tmp", ".pytest_cache", ".ruff_cache", "__pycache__"}
+        tracked_files = []
+        for path in REPO_ROOT.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(REPO_ROOT)
+            if any(part in excluded_parts for part in relative.parts):
+                continue
+            tracked_files.append(relative.as_posix())
+
+    assert len(tracked_files) > 50, "repository scan returned unexpectedly few files"
 
     all_violations: list[str] = []
     for rel_path in tracked_files:

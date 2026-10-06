@@ -41,6 +41,29 @@ ARCHIVE_WARNING_BYTES = 900_000_000
 # It is a measurement of E2025, not a law, and E2026 may differ.
 BYTES_PER_GAME = 359_504.6
 
+# Only relations whose size grows primarily with EuroLeague warehouse games
+# belong in the EL per-game load estimate. ACB staging, archive metadata, model
+# registry and MCP accounting share the same public schema but are independent
+# fixed/other-competition costs and must not be divided by raw_game.
+EL_GAME_COST_RELATIONS = (
+    "raw_game",
+    "raw_boxscore_player",
+    "raw_boxscore_team",
+    "raw_shot",
+    "player",
+    "team",
+    "team_season",
+    "lineup",
+    "lineup_stint",
+    "possession",
+    "game_event",
+    "player_game_minutes",
+    "game_quality",
+    "game_source_state",
+    "roster_registration",
+    "person_game_link",
+)
+
 LEVEL_OK = "ok"
 LEVEL_WARNING = "warning"
 LEVEL_STOP = "stop"
@@ -143,23 +166,21 @@ class PerGameCost:
 
 
 def read_per_game_cost(connection: Any) -> PerGameCost | None:
-    """Measure tonight's per-game cost. Reads only, and must stay that way.
+    """Measure EuroLeague warehouse bytes per loaded EL game.
 
-    In plain language: add up the size of every table in the public schema,
-    indexes included, and divide by the number of games in `raw_game`. With no
-    games loaded there is nothing to divide by, and the function says so with
-    `None` rather than a crash: a fresh warehouse is not an error.
-
-    What it does not measure: the catalogue and the system schemas that make
-    up the gap between the public tables and `pg_database_size`. Those are
-    not per-game costs, which is why the whole-database figure stays the one
-    the budgets are read from.
+    ACB staging now shares the public schema and can be much larger than the
+    EuroLeague hot warehouse. Dividing every public-table byte by `raw_game`
+    therefore makes one EL game appear to cost megabytes and falsely blocks
+    historical loads. Only relations whose size is driven by EL games belong in
+    this numerator; the whole-database stop rule is still checked separately.
     """
     with connection.cursor() as cursor:
         cursor.execute(
             "select coalesce(sum(pg_total_relation_size("
             "format('%I.%I', schemaname, tablename)::regclass)), 0) "
-            "from pg_tables where schemaname = 'public'"
+            "from pg_tables "
+            "where schemaname = 'public' and tablename = any(%s)",
+            (list(EL_GAME_COST_RELATIONS),),
         )
         public_bytes = int(cursor.fetchone()[0])
         cursor.execute("select count(*) from raw_game")

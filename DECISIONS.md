@@ -5154,3 +5154,43 @@ These need the owner's separate check against the unavailable `CONTEXT.md`:
   read is part of choosing `pip`.
 - Decision 18: avoiding aggregate-table storage is partly a response to the hot
   database budget, even though query performance itself was measured.
+
+## 87. Cross-competition athlete identity is a separate canonical layer
+
+**Decided 2026-10-04 by the owner**, while extending the warehouse toward ACB
+and other domestic leagues for player-points modelling.
+
+**Decision.** Source-native player identifiers remain untouched. EuroLeague
+`player_id`, ACB player ids, and future domestic-league ids are stored as source
+identities and may point to one warehouse-level athlete identity. No source id
+is rewritten into another source's namespace, and no id shape is parsed or
+constructed.
+
+Automatic cross-source linking requires an exact normalized name match and an
+exact birth-date match. Biography fields such as height, country and current
+team are supporting evidence only: a height disagreement above 3 cm forces
+manual review, while team and country can change or be represented differently
+and therefore never establish identity by themselves. A birth-date conflict is
+a hard rejection. Missing birth date means review, not an automatic link.
+
+The first measured example is Joel Parra. The EuroLeague warehouse identifies
+him as `P007464`; the ACB source identifies him as `20212265`. The EuroLeague
+roster source reports birth date 2000-04-04, height 201 cm and country ESP.
+The ACB source reports the same birth date and a one-centimetre height
+difference. The matcher therefore links the two source records while preserving
+both source ids unchanged.
+
+**Why this layer exists.** ACB contains players who have never appeared in the
+EuroLeague, so the EuroLeague id cannot be the warehouse-wide athlete key. The
+model also needs one chronological player history across competitions without
+destroying source provenance.
+
+**What this does not establish.** Name normalization is not identity evidence
+on its own, and the current matcher does not write any production table. A
+persistent athlete/source-identity schema, ACB ingestion, and any production
+migration remain separate tasks with their own tests and owner approval.
+
+**Condition.** No automatic cross-source link may be created from name and team
+alone. A persistent identity row must retain every original source id and the
+evidence used to approve the link. Ambiguous or incomplete evidence stays in a
+review state rather than being guessed.

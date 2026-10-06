@@ -264,7 +264,7 @@ later migration should scope the action to `possession_index`.
 
 ### Phase 7 — the MCP server. Complete.
 
-17 read-only `el_` tools now expose warehouse coverage, games, team and player
+18 read-only `el_` tools now expose warehouse coverage, games, team and player
 statistics, lineups, on/off splits, possessions, source-ordered play by play, shot data
 with coordinates (`el_get_shot_data`), fouls by type reconciled to the box score
 (`el_get_fouls`), referee season aggregates unpivoted from the schedule's officiating
@@ -1264,7 +1264,7 @@ handful of users, not against a launch.
 ## Phase 9: external judgement. Opened 2026-09-06.
 
 Phases 1 to 8 are closed, the goal queue is empty, and `docs/SCOPE.md` freezes
-version 1 at 17 tools (Decision 65, amended to fourteen by Decision 79).
+version 1 at 18 tools (Decision 65, amended to fourteen by Decision 79).
 Every remaining gate in this file has
 been a test of the code. This one is a test of the product, and it is the only
 phase left.

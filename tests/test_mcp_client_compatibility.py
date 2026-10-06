@@ -247,8 +247,8 @@ def test_every_declared_tool_is_discovered_with_full_annotations(mock_registry):
     stdio_tools = published_tools(mock_registry)
     sdk_tools = sdk_tools_as_wire(mock_registry)
 
-    assert len(stdio_tools) == 17
-    assert len(sdk_tools) == 17
+    assert len(stdio_tools) == len(TOOL_NAMES)
+    assert len(sdk_tools) == len(TOOL_NAMES)
     assert [t["name"] for t in stdio_tools] == sorted(TOOL_NAMES)
 
     for tool in stdio_tools:

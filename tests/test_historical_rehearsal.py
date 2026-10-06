@@ -76,8 +76,8 @@ class DummyCursor:
             self.connection.roles.discard(name)
 
     def fetchone(self):
-        if self.last_query == "SELECT current_database(), inet_server_port()":
-            return (self.connection.database_name, self.connection.port)
+        if self.last_query == "SELECT current_database()":
+            return (self.connection.database_name,)
         if self.last_query == "SELECT current_schema()":
             return (self.connection.current_schema,)
         if self.last_query == "SHOW server_version":
@@ -129,6 +129,7 @@ class DummyConnection:
     ) -> None:
         self.database_name = database_name
         self.port = port
+        self.info = SimpleNamespace(host="localhost", port=port)
         self.current_schema: str | None = None
         self.schemas: set[str] = set()
         self.executions: list[tuple[str, object]] = []

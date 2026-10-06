@@ -1,0 +1,43 @@
+name: E2023 hosted historical backfill
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/acb-ingestion
+    paths:
+      - ".github/backfill/e2023.trigger"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2026-live-fetcher
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+      - name: Create Python 3.14 environment
+        run: |
+          uv python install 3.14
+          uv venv --python 3.14 .venv
+      - name: Install dependencies
+        run: |
+          uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+          uv pip install --python .venv\Scripts\python.exe -e .
+      - name: Restore and load complete E2023 archive
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: .venv\Scripts\python.exe scripts/load_hosted_historical.py E2023

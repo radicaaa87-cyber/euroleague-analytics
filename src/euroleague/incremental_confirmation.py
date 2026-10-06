@@ -30,6 +30,7 @@ from euroleague.load import load_cached_season, load_cached_shots
 
 LOCAL_CONFIRMATION_DATABASE = "euroleague_test"
 LOCAL_CONFIRMATION_PORT = 5433
+LOCAL_CONFIRMATION_HOSTS = {"localhost", "127.0.0.1", "::1"}
 TEST_URL_ENV_VAR = "EL_TEST_DATABASE_URL"
 
 
@@ -63,11 +64,15 @@ def load_test_database_settings(values: dict[str, str] | None = None) -> Databas
     else:
         env_values = values
     settings = DatabaseSettings.from_url(env_values.get(TEST_URL_ENV_VAR, ""))
-    if settings.database != LOCAL_CONFIRMATION_DATABASE or settings.port != LOCAL_CONFIRMATION_PORT:
+    if (
+        settings.database != LOCAL_CONFIRMATION_DATABASE
+        or settings.port != LOCAL_CONFIRMATION_PORT
+        or settings.host not in LOCAL_CONFIRMATION_HOSTS
+    ):
         raise ValueError(
-            f"EL_TEST_DATABASE_URL must name {LOCAL_CONFIRMATION_DATABASE!r} on port "
-            f"{LOCAL_CONFIRMATION_PORT}; received database {settings.database!r} on port "
-            f"{settings.port}."
+            f"EL_TEST_DATABASE_URL must name {LOCAL_CONFIRMATION_DATABASE!r} on local host "
+            f"and port {LOCAL_CONFIRMATION_PORT}; received host {settings.host!r}, "
+            f"database {settings.database!r} on port {settings.port}."
         )
     return settings
 
@@ -89,14 +94,28 @@ class SchemaScopeError(RuntimeError):
 
 
 def assert_local_confirmation_target(connection: Any) -> None:
-    """Refuse every write unless the connection is the named local test database."""
+    """Refuse every write unless the connection target is the disposable local database.
+
+    Docker port publishing means PostgreSQL can listen on 5432 inside the service
+    while the client deliberately connects through localhost:5433.  The safety
+    boundary is therefore the client connection target, not inet_server_port().
+    """
     with connection.cursor() as cursor:
-        cursor.execute("SELECT current_database(), inet_server_port()")
-        database_name, port = cursor.fetchone()
-    if database_name != LOCAL_CONFIRMATION_DATABASE or int(port) != LOCAL_CONFIRMATION_PORT:
+        cursor.execute("SELECT current_database()")
+        database_name = cursor.fetchone()[0]
+
+    info = connection.info
+    host = str(info.host)
+    port = int(info.port)
+    if (
+        database_name != LOCAL_CONFIRMATION_DATABASE
+        or host not in LOCAL_CONFIRMATION_HOSTS
+        or port != LOCAL_CONFIRMATION_PORT
+    ):
         raise ConfirmationTargetError(
-            f"Expected {LOCAL_CONFIRMATION_DATABASE!r} on port {LOCAL_CONFIRMATION_PORT}; "
-            f"received {database_name!r} on port {port}. No confirmation write was attempted."
+            f"Expected {LOCAL_CONFIRMATION_DATABASE!r} on local host and port "
+            f"{LOCAL_CONFIRMATION_PORT}; received host {host!r}, database "
+            f"{database_name!r} on port {port}. No confirmation write was attempted."
         )
 
 
