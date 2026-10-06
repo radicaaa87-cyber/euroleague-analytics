@@ -136,10 +136,10 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
         "E2026",
         "P009862",
         "2026-10-05",
+        10,
         "E2026",
         "P009862",
         "2026-10-05",
-        10,
     )
     pbp_sql = cursor.statements[3]
     assert "complete reconstructed" not in pbp_sql.lower()
