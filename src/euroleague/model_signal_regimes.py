@@ -563,6 +563,10 @@ COLD_CONTEXT_FEATURE_CANDIDATES = (
     "pre_avg_cold_episode_games",
     "pre_max_cold_episode_games",
     "pre_last_ts_delta_vs_prior_l10",
+    "pre_last_2p_delta_vs_prior_l10",
+    "pre_last_3p_delta_vs_prior_l10",
+    "pre_last_shot_profile_z",
+    "pre_last_hand_evidence_strength",
     "pre_ts_trend_l3_vs_l10",
     "pre_minutes_trend_l3_vs_l10",
     "pre_fga_trend_l3_vs_l10",
@@ -696,6 +700,16 @@ def classify_efficiency_cycles(
         feature_names,
         "pre_last_ts_delta_vs_prior_l10",
     )
+    last_shot_profile_z = _feature_column(
+        matrix,
+        feature_names,
+        "pre_last_shot_profile_z",
+    )
+    last_hand_evidence_strength = _feature_column(
+        matrix,
+        feature_names,
+        "pre_last_hand_evidence_strength",
+    )
     hot_streak = _feature_column(matrix, feature_names, "pre_hot_streak_games", default=0.0)
     cold_streak = _feature_column(matrix, feature_names, "pre_cold_streak_games", default=0.0)
     avg_hot = _feature_column(matrix, feature_names, "pre_avg_hot_episode_games")
@@ -728,9 +742,22 @@ def classify_efficiency_cycles(
         ts_recovering = bool(
             np.isfinite(l3_ts[row]) and np.isfinite(l5_ts[row]) and l3_ts[row] >= l5_ts[row] + 0.015
         )
+        shot_hot_evidence = bool(
+            np.isfinite(last_shot_profile_z[row])
+            and last_shot_profile_z[row] >= 1.0
+        )
+        shot_cold_evidence = bool(
+            np.isfinite(last_shot_profile_z[row])
+            and last_shot_profile_z[row] <= -1.0
+        )
         ts_extreme = bool(
             (np.isfinite(ts_short_gap) and ts_short_gap >= 0.05)
             or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] >= 0.10)
+            or (
+                shot_hot_evidence
+                and np.isfinite(last_ts_delta[row])
+                and last_ts_delta[row] >= 0.05
+            )
         )
 
         fga_falling = bool(
@@ -795,10 +822,16 @@ def classify_efficiency_cycles(
                 ts_short_gap if np.isfinite(ts_short_gap) else -np.inf,
             )
             extreme_vs_personal_baseline = bool(
-                personal_efficiency_excess >= 0.08
-                and (
-                    (np.isfinite(ts_short_gap) and ts_short_gap >= 0.04)
-                    or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] >= 0.10)
+                (
+                    personal_efficiency_excess >= 0.08
+                    and (
+                        (np.isfinite(ts_short_gap) and ts_short_gap >= 0.04)
+                        or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] >= 0.10)
+                    )
+                )
+                or (
+                    personal_efficiency_excess >= 0.05
+                    and shot_hot_evidence
                 )
             )
             mature_for_player = episode_age_ratio >= 1.0
@@ -837,10 +870,16 @@ def classify_efficiency_cycles(
                 ts_short_gap if np.isfinite(ts_short_gap) else np.inf,
             )
             extreme_below_personal_baseline = bool(
-                personal_efficiency_deficit <= -0.08
-                and (
-                    (np.isfinite(ts_short_gap) and ts_short_gap <= -0.04)
-                    or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] <= -0.10)
+                (
+                    personal_efficiency_deficit <= -0.08
+                    and (
+                        (np.isfinite(ts_short_gap) and ts_short_gap <= -0.04)
+                        or (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] <= -0.10)
+                    )
+                )
+                or (
+                    personal_efficiency_deficit <= -0.05
+                    and shot_cold_evidence
                 )
             )
             mature_for_player = cold_age_ratio >= 1.0
