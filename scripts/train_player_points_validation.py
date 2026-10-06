@@ -20,7 +20,6 @@ from typing import Any
 
 import numpy as np
 from sklearn.inspection import permutation_importance
-
 from train_player_points_ml import (
     _as_float,
     _fetch_dataset,
@@ -29,7 +28,6 @@ from train_player_points_ml import (
     _metric_summary,
     _season_mask,
 )
-
 from euroleague.feature_provenance import provenance_manifest
 from euroleague.leakage import assert_feature_cutoffs_before_tipoff, assert_prefix_invariance
 from euroleague.ml_benchmark import build_model, candidate_specs, runtime_model_identity
