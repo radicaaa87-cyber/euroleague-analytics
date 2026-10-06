@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import pickle
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,12 @@ from euroleague.ml_benchmark import (
     runtime_model_identity,
 )
 from euroleague.model_training import model_feature_columns, training_dataset_sql
+from euroleague.model_validation import (
+    placebo_target_audit,
+    rolling_time_audit,
+    segment_stability_audit,
+    write_preblind_lock,
+)
 from euroleague.role_projection import role_base_projection
 
 DEFAULT_TRAIN_SEASON = "E2023"
@@ -74,6 +81,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--predictions", type=Path, required=True)
+    parser.add_argument(
+        "--preblind-lock",
+        type=Path,
+        help="write the pre-blind dataset/prediction hash manifest here",
+    )
     return parser
 
 
@@ -464,7 +476,6 @@ def _benchmark_target(
         "model": final_model,
         "validation_prediction": selected_validation_prediction,
         "test_prediction": test_prediction,
-        "blind_test": _metric_summary(y[test_mask], test_prediction),
     }
 
 
@@ -559,7 +570,6 @@ def main(argv: list[str] | None = None) -> int:
     test_prediction_delta = point_result["test_prediction"]
     test_naive_baseline = naive_baseline[test_mask]
     test_prediction = test_naive_baseline + test_prediction_delta
-    test_metrics = _metric_summary(y[test_mask], test_prediction)
 
     minutes_y = np.asarray(
         [float(row[index["target_minutes"]]) for row in rows],
@@ -650,14 +660,8 @@ def main(argv: list[str] | None = None) -> int:
     predicted_3pa = predicted_fga * predicted_three_share
     predicted_fta = predicted_minutes * predicted_fta_per_minute
 
-    fga_total_metrics = _metric_summary(fga_y[test_mask], predicted_fga)
-    three_pa_total_metrics = _metric_summary(three_pa_y[test_mask], predicted_3pa)
-    fta_total_metrics = _metric_summary(fta_y[test_mask], predicted_fta)
-
     baseline_index = feature_names.index("pre_l10_points")
     l10_baseline_prediction = x[test_mask, baseline_index]
-    l10_baseline_metrics = _metric_summary(y[test_mask], l10_baseline_prediction)
-    naive_baseline_metrics = _metric_summary(y[test_mask], test_naive_baseline)
 
     two_pct_index = feature_names.index("pre_l10_2p_pct")
     three_pct_index = feature_names.index("pre_l10_3p_pct")
@@ -706,7 +710,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     ]
     role_base_points = np.asarray([row.points for row in role_base_rows], dtype=float)
-    role_base_metrics = _metric_summary(y[test_mask], role_base_points)
 
     volatility_index = feature_names.index("pre_l10_points_std")
     volatility_thresholds = _volatility_thresholds(x[tuning_train_mask, volatility_index])
@@ -721,12 +724,150 @@ def main(argv: list[str] | None = None) -> int:
         x[test_mask, volatility_index],
         uncertainty_calibration,
     )
+
+    row_key_fields = ("season_code", "gamecode", "player_id", "feature_cutoff_time")
+    all_row_keys = [
+        tuple(row[index[field]] for field in row_key_fields)
+        for row in rows
+    ]
+    legal_target_row_keys = [
+        key
+        for key, selected_row in zip(all_row_keys, final_train_mask, strict=True)
+        if selected_row
+    ]
+    blind_row_keys = [
+        key
+        for key, selected_row in zip(all_row_keys, test_mask, strict=True)
+        if selected_row
+    ]
+    split_manifest = {
+        "tuning_train": [args.train_season],
+        "validation": [args.validation_season],
+        "final_train": [args.train_season, args.validation_season],
+        "blind_test": [args.test_season],
+    }
+    lock_path = args.preblind_lock or args.report.with_name("preblind_lock.json")
+    preblind_lock = write_preblind_lock(
+        lock_path,
+        feature_names=feature_names,
+        all_row_keys=all_row_keys,
+        matrix=x,
+        legal_target_row_keys=legal_target_row_keys,
+        legal_target=point_delta_y[final_train_mask],
+        blind_row_keys=blind_row_keys,
+        blind_predictions={
+            "predicted_delta_vs_naive": test_prediction_delta,
+            "predicted_points": test_prediction,
+            "predicted_minutes": predicted_minutes,
+            "predicted_fga_per_minute": predicted_fga_per_minute,
+            "predicted_fga": predicted_fga,
+            "predicted_three_point_share": predicted_three_share,
+            "predicted_3pa": predicted_3pa,
+            "predicted_fta_per_minute": predicted_fta_per_minute,
+            "predicted_fta": predicted_fta,
+            "role_base_points": role_base_points,
+            "p10_points": uncertainty_intervals["p10"],
+            "p25_points": uncertainty_intervals["p25"],
+            "p50_points": uncertainty_intervals["p50"],
+            "p75_points": uncertainty_intervals["p75"],
+            "p90_points": uncertainty_intervals["p90"],
+        },
+        model_identity=selected_identity,
+        selected_params=selected["params"],
+        split=split_manifest,
+        created_at=datetime.now(UTC).isoformat(),
+        git_commit=os.environ.get("GITHUB_SHA"),
+    )
+    print(f"preblind_lock={json.dumps(preblind_lock, sort_keys=True)}")
+
+    # Blind outcomes are opened only after the prediction lock above exists.
+    test_metrics = _metric_summary(y[test_mask], test_prediction)
+    minutes_blind_metrics = _metric_summary(
+        minutes_y[test_mask],
+        predicted_minutes,
+    )
+    fga_rate_blind_metrics = _metric_summary(
+        fga_per_minute_y[test_mask],
+        predicted_fga_per_minute,
+    )
+    three_share_blind_metrics = _metric_summary(
+        three_share_y[test_mask],
+        predicted_three_share,
+    )
+    fta_rate_blind_metrics = _metric_summary(
+        fta_per_minute_y[test_mask],
+        predicted_fta_per_minute,
+    )
+    fga_total_metrics = _metric_summary(fga_y[test_mask], predicted_fga)
+    three_pa_total_metrics = _metric_summary(three_pa_y[test_mask], predicted_3pa)
+    fta_total_metrics = _metric_summary(fta_y[test_mask], predicted_fta)
+    l10_baseline_metrics = _metric_summary(y[test_mask], l10_baseline_prediction)
+    naive_baseline_metrics = _metric_summary(y[test_mask], test_naive_baseline)
+    role_base_metrics = _metric_summary(y[test_mask], role_base_points)
     uncertainty_metrics = _interval_metrics(
         y[test_mask],
         uncertainty_intervals,
     )
 
-    # The blind test has already been scored at this point. Permutation
+    placebo_audit = placebo_target_audit(
+        model_factory=build_model,
+        family=selected["family"],
+        params=selected["params"],
+        x=x,
+        residual_target=point_delta_y,
+        train_mask=final_train_mask,
+        test_mask=test_mask,
+        real_test_prediction=test_prediction_delta,
+    )
+    rolling_audit = rolling_time_audit(
+        model_factory=build_model,
+        family=selected["family"],
+        params=selected["params"],
+        x=x,
+        residual_target=point_delta_y,
+        actual_points=y,
+        naive_points=naive_baseline,
+        timestamps=[row[index["game_tipoff_utc"]] for row in rows],
+        eligible_mask=final_train_mask,
+    )
+    test_rows_for_stability = [
+        row for row, selected_row in zip(rows, test_mask, strict=True) if selected_row
+    ]
+    segment_audit = segment_stability_audit(
+        actual=y[test_mask],
+        predicted=test_prediction,
+        naive=test_naive_baseline,
+        segments={
+            "player": [row[index["player_id"]] for row in test_rows_for_stability],
+            "team": [row[index["team_code"]] for row in test_rows_for_stability],
+            "month": [str(row[index["game_date"]])[:7] for row in test_rows_for_stability],
+            "starter_state": [
+                "starter" if bool(row[index["target_was_starter"]]) else "bench"
+                for row in test_rows_for_stability
+            ],
+            "volatility": uncertainty_band,
+        },
+    )
+    control_statuses = [
+        placebo_audit["status"],
+        rolling_audit["status"],
+        segment_audit["status"],
+    ]
+    if "fail" in control_statuses:
+        controls_status = "fail"
+    elif "warn" in control_statuses or "insufficient" in control_statuses:
+        controls_status = "warn"
+    else:
+        controls_status = "pass"
+    validation_controls = {
+        "status": controls_status,
+        "preblind_lock": preblind_lock,
+        "placebo_target_audit": placebo_audit,
+        "rolling_time_audit": rolling_audit,
+        "segment_stability_audit": segment_audit,
+    }
+
+    # The blind test has now been scored. Permutation
     # importance is diagnostic only and cannot change family or parameter selection.
     test_x = x[test_mask]
     test_y = point_delta_y[test_mask]
@@ -803,12 +944,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = {
         "created_at": datetime.now(UTC).isoformat(),
-        "split": {
-            "tuning_train": [args.train_season],
-            "validation": [args.validation_season],
-            "final_train": [args.train_season, args.validation_season],
-            "blind_test": [args.test_season],
-        },
+        "split": split_manifest,
         "minutes_basis": args.minutes_basis,
         "min_history_games": args.min_history_games,
         "rows": {
@@ -838,7 +974,7 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_id": minutes_result["selected"]["candidate_id"],
                 },
                 "selected_params": minutes_result["selected"]["params"],
-                "blind_test": minutes_result["blind_test"],
+                "blind_test": minutes_blind_metrics,
             },
             "fga_per_minute": {
                 "validation_leaderboard": fga_rate_result["validation_leaderboard"],
@@ -847,7 +983,7 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_id": fga_rate_result["selected"]["candidate_id"],
                 },
                 "selected_params": fga_rate_result["selected"]["params"],
-                "blind_test": fga_rate_result["blind_test"],
+                "blind_test": fga_rate_blind_metrics,
             },
             "three_point_share": {
                 "validation_leaderboard": three_share_result["validation_leaderboard"],
@@ -856,7 +992,7 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_id": three_share_result["selected"]["candidate_id"],
                 },
                 "selected_params": three_share_result["selected"]["params"],
-                "blind_test": three_share_result["blind_test"],
+                "blind_test": three_share_blind_metrics,
             },
             "fta_per_minute": {
                 "validation_leaderboard": fta_rate_result["validation_leaderboard"],
@@ -865,7 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_id": fta_rate_result["selected"]["candidate_id"],
                 },
                 "selected_params": fta_rate_result["selected"]["params"],
-                "blind_test": fta_rate_result["blind_test"],
+                "blind_test": fta_rate_blind_metrics,
             },
             "derived_attempts": {
                 "fga": fga_total_metrics,
@@ -901,6 +1037,7 @@ def main(argv: list[str] | None = None) -> int:
         "permutation_importance": ranked_importance,
         "source_family_importance": source_family_importance,
         "grouped_source_permutation_importance": grouped_source_importance,
+        "validation_controls": validation_controls,
         "notes": [
             "All four model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
@@ -919,6 +1056,10 @@ def main(argv: list[str] | None = None) -> int:
             "Role-volatility features separate recurring variance from one-game contextual shocks.",
             "A temporal leakage gate requires every feature cutoff to precede tipoff.",
             "Adding E2025 must leave every E2023/E2024 model feature byte-for-byte equal.",
+            "A pre-blind lock hashes the feature matrix, legal E2023/E2024 targets and all "
+            "E2025 predictions before any E2025 outcome metric is calculated.",
+            "A shuffled-target placebo, expanding rolling-time checks and segment stability "
+            "audit are mandatory diagnostics around the locked blind test.",
             "Prediction ranges are calibrated only from validation residuals; "
             "the blind-test outcomes never set P10/P25/P50/P75/P90 interval widths.",
             "Uncertainty is stratified by leakage-safe pre_l10_points_std so stable and "
@@ -975,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
                 "trained_seasons": [args.train_season, args.validation_season],
                 "blind_test_season": args.test_season,
                 "leakage_audit": leakage_audit,
+                "validation_controls": validation_controls,
             },
             handle,
             protocol=pickle.HIGHEST_PROTOCOL,
@@ -1028,7 +1170,11 @@ def main(argv: list[str] | None = None) -> int:
     print("uncertainty_blind_test=" + json.dumps(report["blind_test_uncertainty"], sort_keys=True))
     print(f"selected_model={json.dumps(report['selected_model'], sort_keys=True)}")
     print(f"selected_params={json.dumps(selected['params'], sort_keys=True)}")
+    print(f"validation_controls={json.dumps(validation_controls, sort_keys=True)}")
     print(f"features={len(feature_names)}")
+    if validation_controls["status"] == "fail":
+        print("MODEL VALIDATION CONTROLS FAILED: candidate will not be registered.")
+        return 2
     return 0
 
 
