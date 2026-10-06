@@ -83,7 +83,7 @@ BOOKMAKER_CONFIG: dict[str, dict[str, Any]] = {
         "search_queries": [
             'site:coupons.merbet.com filetype:pdf EVROLIGA "poeni igrača"',
             'site:meridianbet.rs filetype:pdf EVROLIGA "poeni igrača"',
-            'site:meridianbet.rs filetype:pdf dopuna košarka EVROLIGA',
+            "site:meridianbet.rs filetype:pdf dopuna košarka EVROLIGA",
         ],
         "listing_pages": ["https://coupons.merbet.com/files"],
         "seeds": [],
@@ -96,7 +96,7 @@ BOOKMAKER_CONFIG: dict[str, dict[str, Any]] = {
         ],
         "search_queries": [
             'site:millenniumbet.rs filetype:pdf EVROLIGA "poeni igrača"',
-            'site:millenniumbet.rs filetype:pdf dopuna košarka EVROLIGA',
+            "site:millenniumbet.rs filetype:pdf dopuna košarka EVROLIGA",
         ],
         "listing_pages": [],
         "seeds": [],
