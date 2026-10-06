@@ -15,6 +15,7 @@ from euroleague.mcp import queries
 from euroleague.mcp.envelope import build_response
 from euroleague.mcp.resolve import resolve_player, resolve_season, resolve_team
 from euroleague.pregame_context import ROLE_CONTEXT_SQL
+from euroleague.travel import travel_context
 
 
 def _iso_date(value: Any, name: str) -> str | None:
@@ -349,6 +350,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         rows[0].update(pbp_rows[0])
 
     opponent_code: str | None = None
+    target_context: dict[str, Any] = {}
 
     if target_gamecode is not None:
         cursor.execute(
@@ -361,12 +363,132 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         )
         context_rows = queries._rows(cursor)
         context = context_rows[0] if context_rows else {}
+        target_context = context
         if rows:
             rows[0]["target_gamecode"] = target_gamecode
             rows[0]["pregame_role_context"] = context
+            rows[0]["travel_context"] = travel_context(
+                rows[0].get("recent_games"),
+                target_team_code=context.get("target_team_code"),
+                target_opponent_team_code=context.get("opponent_team_code"),
+                target_is_home=context.get("is_home"),
+            )
         inferred_opponent = context.get("opponent_team_code")
         if inferred_opponent:
             opponent_code = str(inferred_opponent)
+
+    cross_competition_cutoff: Any = target_context.get("target_tipoff_utc")
+    if cross_competition_cutoff is None and as_of_date is not None:
+        cross_competition_cutoff = f"{as_of_date}T00:00:00+00:00"
+
+    cursor.execute(
+        """
+        with athlete_link as (
+            select athlete_id
+            from athlete_source_identity
+            where source = 'EL'
+              and source_player_id = %s
+              and match_status in ('auto_link', 'manual_verified')
+        ),
+        cutoff as (
+            select coalesce(%s::timestamptz, now()) as at
+        ),
+        recent as (
+            select
+                h.*,
+                row_number() over (
+                    order by h.utc_date desc, h.source_game_id desc
+                ) as rn
+            from v_athlete_game_history h
+            join athlete_link a using (athlete_id)
+            cross join cutoff c
+            where h.source = 'ACB'
+              and h.utc_date < c.at
+              and h.minutes_seconds > 0
+              and not h.excluded_by_default
+            order by h.utc_date desc, h.source_game_id desc
+            limit 10
+        ),
+        stats as (
+            select
+                count(*) as history_games,
+                max(utc_date) as last_game_at,
+                round(avg(minutes_seconds::numeric / 60.0)
+                    filter (where rn <= 3), 2) as l3_minutes,
+                round(avg(minutes_seconds::numeric / 60.0)
+                    filter (where rn <= 5), 2) as l5_minutes,
+                round(avg(points::numeric)
+                    filter (where rn <= 3), 2) as l3_points,
+                round(avg(points::numeric)
+                    filter (where rn <= 5), 2) as l5_points,
+                round(avg(field_goals_attempted::numeric)
+                    filter (where rn <= 3), 2) as l3_fga,
+                round(avg(field_goals_attempted::numeric)
+                    filter (where rn <= 5), 2) as l5_fga,
+                round(avg(three_attempted::numeric)
+                    filter (where rn <= 3), 2) as l3_3pa,
+                round(avg(three_attempted::numeric)
+                    filter (where rn <= 5), 2) as l5_3pa,
+                round(avg(free_throw_attempted::numeric)
+                    filter (where rn <= 3), 2) as l3_fta,
+                round(avg(free_throw_attempted::numeric)
+                    filter (where rn <= 5), 2) as l5_fta,
+                round(avg(case when is_starter then 1.0 else 0.0 end)
+                    filter (where rn <= 5), 3) as l5_starter_rate,
+                round(
+                    60.0 * sum(points) filter (where rn <= 5)
+                    / nullif(sum(minutes_seconds) filter (where rn <= 5), 0),
+                    3
+                ) as l5_points_per_minute,
+                round(
+                    60.0 * sum(field_goals_attempted) filter (where rn <= 5)
+                    / nullif(sum(minutes_seconds) filter (where rn <= 5), 0),
+                    3
+                ) as l5_fga_per_minute,
+                count(*) filter (
+                    where utc_date >= (select at from cutoff) - interval '7 days'
+                ) as games_last_7d,
+                round(
+                    sum(minutes_seconds::numeric / 60.0) filter (
+                        where utc_date >= (select at from cutoff) - interval '7 days'
+                    ),
+                    2
+                ) as minutes_last_7d,
+                round(
+                    extract(
+                        epoch from ((select at from cutoff) - max(utc_date))
+                    ) / 86400.0,
+                    3
+                ) as days_since_last_game,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'date', utc_date::date,
+                        'game_id', source_game_id,
+                        'team_source_id', team_source_id,
+                        'opponent_source_id', opponent_source_id,
+                        'starter', is_starter,
+                        'minutes', round(minutes_seconds::numeric / 60.0, 2),
+                        'points', points,
+                        'fga', field_goals_attempted,
+                        '3pa', three_attempted,
+                        'fta', free_throw_attempted
+                    )
+                    order by rn
+                ) as recent_games
+            from recent
+        )
+        select
+            *,
+            round(l3_minutes - l5_minutes, 2) as minutes_trend_l3_vs_l5,
+            round(l3_fga - l5_fga, 2) as fga_trend_l3_vs_l5,
+            round(l3_points - l5_points, 2) as points_trend_l3_vs_l5
+        from stats
+        """,
+        (player_id, cross_competition_cutoff),
+    )
+    acb_rows = queries._rows(cursor)
+    if rows and acb_rows:
+        rows[0]["acb_recent_form"] = acb_rows[0]
 
     if arguments.get("opponent"):
         opponent_code = resolve_team(cursor, season_code, arguments["opponent"])
@@ -431,6 +553,13 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             "vacated-minutes/FGA signals are severity- and source-confidence-weighted; this "
             "forward context remains separate from historical blind-test training until the "
             "timestamped archive is large enough to calibrate it safely.",
+            "acb_recent_form follows only canonical athlete identity links and is cut off "
+            "strictly before the target tipoff (or as_of_date). It never matches players by "
+            "name and it remains a separate domestic-role signal rather than blindly pooling "
+            "ACB and EuroLeague averages.",
+            "travel_context reports great-circle distance between nominal team home cities. "
+            "It is a schedule travel-load proxy, not a claim about the actual flight path or "
+            "a temporary neutral/home venue; unknown team codes stay null.",
             "The bookmaker line is intentionally excluded. Produce the projection first, "
             "then calculate EDGE against the central line.",
         ],
