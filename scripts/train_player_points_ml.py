@@ -96,6 +96,13 @@ def _metric_summary(actual: np.ndarray, predicted: np.ndarray) -> dict[str, floa
     }
 
 
+def _finite_median(values: np.ndarray, fallback: float) -> float:
+    finite = values[np.isfinite(values)]
+    if len(finite) == 0:
+        return fallback
+    return float(np.median(finite))
+
+
 def _fetch_dataset(
     seasons: list[str],
     minutes_basis: str,
@@ -478,6 +485,55 @@ def main(argv: list[str] | None = None) -> int:
     l10_baseline_prediction = x[test_mask, baseline_index]
     l10_baseline_metrics = _metric_summary(y[test_mask], l10_baseline_prediction)
     naive_baseline_metrics = _metric_summary(y[test_mask], test_naive_baseline)
+
+    two_pct_index = feature_names.index("pre_l10_2p_pct")
+    three_pct_index = feature_names.index("pre_l10_3p_pct")
+    ft_pct_index = feature_names.index("pre_l10_ft_pct")
+    efficiency_priors = {
+        "two_pct": _finite_median(x[final_train_mask, two_pct_index], 0.53),
+        "three_pct": _finite_median(x[final_train_mask, three_pct_index], 0.35),
+        "ft_pct": _finite_median(x[final_train_mask, ft_pct_index], 0.78),
+    }
+
+    test_two_pct = np.where(
+        np.isfinite(x[test_mask, two_pct_index]),
+        x[test_mask, two_pct_index],
+        efficiency_priors["two_pct"],
+    )
+    test_three_pct = np.where(
+        np.isfinite(x[test_mask, three_pct_index]),
+        x[test_mask, three_pct_index],
+        efficiency_priors["three_pct"],
+    )
+    test_ft_pct = np.where(
+        np.isfinite(x[test_mask, ft_pct_index]),
+        x[test_mask, ft_pct_index],
+        efficiency_priors["ft_pct"],
+    )
+
+    role_base_rows = [
+        role_base_projection(
+            predicted_minutes=float(minutes),
+            predicted_fga_per_minute=float(fga_rate),
+            predicted_three_share=float(three_share),
+            predicted_fta_per_minute=float(fta_rate),
+            two_pct=float(two_pct),
+            three_pct=float(three_pct),
+            ft_pct=float(ft_pct),
+        )
+        for minutes, fga_rate, three_share, fta_rate, two_pct, three_pct, ft_pct in zip(
+            predicted_minutes,
+            predicted_fga_per_minute,
+            predicted_three_share,
+            predicted_fta_per_minute,
+            test_two_pct,
+            test_three_pct,
+            test_ft_pct,
+            strict=True,
+        )
+    ]
+    role_base_points = np.asarray([row.points for row in role_base_rows], dtype=float)
+    role_base_metrics = _metric_summary(y[test_mask], role_base_points)
 
     # The blind test has already been scored at this point. Permutation
     # importance is diagnostic only and cannot change family or parameter selection.
