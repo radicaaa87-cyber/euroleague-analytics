@@ -198,7 +198,6 @@ def test_model_context_applies_as_of_date_before_rolling_features() -> None:
     assert "bookmaker" in " ".join(response["caveats"]).lower()
 
 
-
 def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None:
     cursor = RecordingCursor(
         [
@@ -480,10 +479,7 @@ def test_model_context_gamecode_attaches_weighted_pregame_role_context() -> None
     assert row["teammate_triple_context"][0]["scoring_association"] == "positive"
     assert row["teammate_triple_context"][0]["pregame_availability"][0]["player_id"] == "PTEAM1"
     assert row["key_lineup_context"][0]["lineup_association"] == "positive"
-    assert (
-        row["key_lineup_context"][0]["pregame_unavailable_players"][0]["player_id"]
-        == "PTEAM1"
-    )
+    assert row["key_lineup_context"][0]["pregame_unavailable_players"][0]["player_id"] == "PTEAM1"
 
 
 def test_model_context_rejects_nonpositive_gamecode() -> None:
