@@ -8,6 +8,9 @@ from euroleague.model_signal_regimes import (
     ablation_signal_contributions,
     build_signal_fingerprints,
     signal_domain_columns,
+    apply_pattern_effects,
+    learn_pattern_effects,
+    summarize_pattern_stability,
     summarize_repeating_patterns,
     summarize_signal_tiers,
 )
@@ -150,3 +153,89 @@ def test_repeating_patterns_are_ranked_only_after_minimum_repeat_count() -> None
     assert patterns[0]["fingerprint"] == "role_volume:+|rotation:+|availability:+"
     assert patterns[0]["occurrences"] == 3
     assert patterns[0]["directional_correction_hit_rate"] == 2 / 3
+
+
+def test_pattern_stability_reports_unique_games_players_and_cluster_balanced_rates() -> None:
+    actual = np.asarray([8.0, 8.0, 12.0, 12.0])
+    naive = np.asarray([10.0, 10.0, 10.0, 10.0])
+    predicted = np.asarray([9.0, 9.0, 9.0, 11.0])
+    fingerprints = [
+        {"signal_tier": "2", "fingerprint": "role_volume:-|efficiency_state:-"},
+        {"signal_tier": "2", "fingerprint": "role_volume:-|efficiency_state:-"},
+        {"signal_tier": "2", "fingerprint": "role_volume:-|efficiency_state:-"},
+        {"signal_tier": "2", "fingerprint": "role_volume:-|efficiency_state:-"},
+    ]
+
+    stability = summarize_pattern_stability(
+        actual=actual,
+        naive=naive,
+        predicted=predicted,
+        fingerprints=fingerprints,
+        groups={
+            "game": ["g1", "g1", "g2", "g3"],
+            "player": ["p1", "p2", "p1", "p3"],
+            "team": ["a", "b", "a", "c"],
+        },
+        min_occurrences=2,
+    )
+
+    row = stability[0]
+    assert row["occurrences"] == 4
+    assert row["unique_groups"] == {"game": 3, "player": 3, "team": 3}
+    assert row["row_directional_hit_rate"] == 0.75
+    assert row["cluster_balanced_hit_rate"]["game"] == (1.0 + 0.0 + 1.0) / 3.0
+
+
+def test_pattern_effect_learning_shrinks_training_only_correction() -> None:
+    actual = np.asarray([7.0, 8.0, 9.0, 8.0])
+    naive = np.asarray([10.0, 10.0, 10.0, 10.0])
+    predicted = np.asarray([9.0, 9.0, 9.0, 9.0])
+    fingerprints = [
+        {"fingerprint": "role_volume:-|efficiency_state:-"},
+        {"fingerprint": "role_volume:-|efficiency_state:-"},
+        {"fingerprint": "role_volume:-|efficiency_state:-"},
+        {"fingerprint": "role_volume:-|efficiency_state:-"},
+    ]
+
+    learned = learn_pattern_effects(
+        actual=actual,
+        naive=naive,
+        predicted=predicted,
+        fingerprints=fingerprints,
+        min_occurrences=3,
+        prior_strength=4.0,
+    )
+
+    row = learned["role_volume:-|efficiency_state:-"]
+    assert row["occurrences"] == 4
+    assert row["mean_model_delta_points"] == -1.0
+    assert row["mean_realized_delta_points"] == -2.0
+    assert row["raw_correction_points"] == -1.0
+    assert row["shrinkage_weight"] == 0.5
+    assert row["calibration_correction_points"] == -0.5
+    assert row["stable_direction"] is True
+
+
+def test_pattern_effect_application_preserves_row_specific_delta() -> None:
+    naive = np.asarray([10.0, 10.0])
+    predicted = np.asarray([9.2, 8.7])
+    fingerprints = [
+        {"fingerprint": "role_volume:-|efficiency_state:-"},
+        {"fingerprint": "unknown"},
+    ]
+    learned = {
+        "role_volume:-|efficiency_state:-": {
+            "occurrences": 40,
+            "stable_direction": True,
+            "calibration_correction_points": -0.4,
+        }
+    }
+
+    calibrated = apply_pattern_effects(
+        naive=naive,
+        predicted=predicted,
+        fingerprints=fingerprints,
+        learned_effects=learned,
+    )
+
+    assert np.allclose(calibrated, [8.8, 8.7])
