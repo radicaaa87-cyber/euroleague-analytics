@@ -225,9 +225,7 @@ def _write_validation_predictions(
         "team_code",
         "opponent_team_code",
     )
-    validation_rows = [
-        row for row, selected in zip(rows, validation_mask, strict=True) if selected
-    ]
+    validation_rows = [row for row, selected in zip(rows, validation_mask, strict=True) if selected]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
