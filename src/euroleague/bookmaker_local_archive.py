@@ -24,9 +24,7 @@ def iter_pdf_payloads(input_path: Path) -> list[LocalPdfPayload]:
 
     if path.is_dir():
         files = sorted(
-            item
-            for item in path.rglob("*")
-            if item.is_file() and item.suffix.lower() == ".pdf"
+            item for item in path.rglob("*") if item.is_file() and item.suffix.lower() == ".pdf"
         )
         return [
             LocalPdfPayload(
