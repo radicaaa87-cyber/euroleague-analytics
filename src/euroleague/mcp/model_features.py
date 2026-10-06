@@ -100,6 +100,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                 p.free_throws_attempted,
                 p.{seconds_column} as seconds_played,
                 p.team_possessions,
+                round(avg(p.points::numeric) over (), 3) as naive_baseline_points,
                 row_number() over (
                     order by p.utc_date desc, p.gamecode desc
                 ) as rn
@@ -632,6 +633,9 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             "This compact bundle derives possessions, lineup concentration and stint "
             "patterns from the complete reconstructed play-by-play. Raw event rows stay "
             "server-side; use el_get_play_by_play only for exceptional drill-down.",
+            "naive_baseline_points is the simple scoring average from all eligible "
+            "prior games in the selected season before the cutoff; the trained residual model "
+            "uses the matching pre_naive_points_mean feature as its starting point.",
             "When as_of_date is supplied, every rolling player and opponent statistic "
             "uses only games strictly before that date to prevent look-ahead leakage.",
             "When gamecode is supplied, pregame_role_context is built only from evidence "
