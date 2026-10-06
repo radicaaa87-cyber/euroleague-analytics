@@ -577,9 +577,7 @@ def _training_signal_oof_history(
             evaluation_mask,
         )
         gate_score = np.asarray(gate_result["validation_score"], dtype=float)
-        gate = selected["regime_gate_floor"] + (
-            1.0 - selected["regime_gate_floor"]
-        ) * gate_score
+        gate = selected["regime_gate_floor"] + (1.0 - selected["regime_gate_floor"]) * gate_score
 
         matchup_result = _fit_matchup_adjustment(
             x,
@@ -605,9 +603,7 @@ def _training_signal_oof_history(
         )
         matchup_signal = matchup_delta * selected["matchup_shrinkage"]
         if "matchup_opponent" in contributions:
-            contributions["matchup_opponent"] = (
-                contributions["matchup_opponent"] + matchup_signal
-            )
+            contributions["matchup_opponent"] = contributions["matchup_opponent"] + matchup_signal
         else:
             contributions["matchup_opponent"] = matchup_signal
 
@@ -1030,8 +1026,7 @@ def main(argv: list[str] | None = None) -> int:
         fingerprints=signal_fingerprints,
         groups={
             "game": [
-                f"{row[index['season_code']]}:{row[index['gamecode']]}"
-                for row in validation_rows
+                f"{row[index['season_code']]}:{row[index['gamecode']]}" for row in validation_rows
             ],
             "player": [str(row[index["player_id"]]) for row in validation_rows],
             "team": [str(row[index["team_code"]]) for row in validation_rows],
