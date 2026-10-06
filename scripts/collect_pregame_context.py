@@ -253,6 +253,49 @@ def _insert_item(
         return cursor.fetchone() is not None
 
 
+def _record_collection(
+    connection: psycopg.Connection[Any],
+    *,
+    game: UpcomingGame,
+    query_count: int,
+    successful_query_count: int,
+    players_queried: int,
+    items_seen: int,
+    inserted_event_count: int,
+) -> None:
+    failed_query_count = query_count - successful_query_count
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            insert into pregame_context_collection (
+                season_code,
+                gamecode,
+                team_code,
+                query_count,
+                successful_query_count,
+                failed_query_count,
+                players_queried,
+                items_seen,
+                inserted_event_count,
+                collector_version,
+                metadata
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'rss_v1', '{}'::jsonb)
+            """,
+            (
+                game.season_code,
+                game.gamecode,
+                game.team_code,
+                query_count,
+                successful_query_count,
+                failed_query_count,
+                players_queried,
+                items_seen,
+                inserted_event_count,
+            ),
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--players-per-team", type=int, default=10)
@@ -275,12 +318,20 @@ def main(argv: list[str] | None = None) -> int:
     ) as connection:
         games = _upcoming_games(connection)
         for game in games:
+            game_inserted_before = inserted
+            game_queries = 0
+            game_successful_queries = 0
+            game_items_seen = 0
+
             query = team_query(game.team_name)
             queries += 1
+            game_queries += 1
             try:
                 items = _rss_items(query, limit=args.items_per_query)
+                game_successful_queries += 1
             except OSError, ET.ParseError:
                 items = []
+            game_items_seen += len(items)
             for item in items:
                 inserted += int(
                     _insert_item(
@@ -300,10 +351,13 @@ def main(argv: list[str] | None = None) -> int:
             for player in players:
                 query = role_query(player.player_name, game.team_name)
                 queries += 1
+                game_queries += 1
                 try:
                     items = _rss_items(query, limit=args.items_per_query)
+                    game_successful_queries += 1
                 except OSError, ET.ParseError:
                     continue
+                game_items_seen += len(items)
                 for item in items:
                     inserted += int(
                         _insert_item(
@@ -314,6 +368,16 @@ def main(argv: list[str] | None = None) -> int:
                             item=item,
                         )
                     )
+
+            _record_collection(
+                connection,
+                game=game,
+                query_count=game_queries,
+                successful_query_count=game_successful_queries,
+                players_queried=len(players),
+                items_seen=game_items_seen,
+                inserted_event_count=inserted - game_inserted_before,
+            )
 
     print(f"pregame_context games_teams={len(games)} queries={queries} inserted={inserted}")
     return 0
