@@ -5245,3 +5245,31 @@ a validation layer until repeated patterns survive an untouched sample.
 it has been measured against locked bookmaker central lines. No rule may be
 retuned from the blind season after its outcomes are opened.
 
+
+
+## 89. User-supplied bookmaker PDFs use a local single-pass batch path
+
+**Decided 2026-10-06 by the owner**, after a small historical Mozzart batch took
+hours through a fragmented manual workflow.
+
+**Decision.** When the PDF bytes are already available, ingestion must not run
+web discovery and must not resolve or insert one offer at a time. A PDF, folder,
+or ZIP is read once; text extraction and player-points parsing happen in memory;
+athlete candidates are loaded once; source documents are bulk-upserted; offers
+are bulk-inserted; historical game linking runs as a separate batch against the
+verified warehouse snapshot.
+
+Raw PDF identity is preserved by SHA-256 and source name. Re-importing the same
+document is idempotent through the existing document/row uniqueness constraints.
+
+**Why.** Network discovery, repeated PDF handling, and per-row database
+round-trips add latency without improving the evidence. Historical bookmaker
+archives are small enough to parse locally in one pass. The model pipeline is
+not changed by this decision; bookmaker lines remain a separate validation
+dataset.
+
+**Condition.** For user-supplied PDFs, any slower path must first show a measured
+correctness requirement that the batch path cannot satisfy. Performance reports
+must expose documents seen, offers parsed/inserted, errors, and elapsed seconds.
+Game links and uncertain athlete identities remain conservative: unresolved
+rows are kept rather than guessed.
