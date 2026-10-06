@@ -365,11 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         document_rows = [
-            {
-                key: value
-                for key, value in document.items()
-                if key not in {"name", "offers"}
-            }
+            {key: value for key, value in document.items() if key not in {"name", "offers"}}
             for document in parsed_docs
         ]
         document_ids = _upsert_documents_bulk(connection, document_rows)
