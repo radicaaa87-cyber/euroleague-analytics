@@ -108,10 +108,26 @@ jobs:
             --model ml-output/validation_candidate.pkl \
             --predictions ml-output/e2024_validation_predictions.csv &
           TRAIN_PID=$!
+          PREV_SIZE=-1
+          IDLE_TICKS=0
           while kill -0 "$TRAIN_PID" 2>/dev/null; do
-            echo "::notice::model10 training heartbeat $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            NOW="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            CPU="$(ps -p "$TRAIN_PID" -o %cpu= | tr -d ' ' || true)"
+            SIZE="$(du -sb ml-output 2>/dev/null | awk '{print $1}' || echo 0)"
+            echo "::notice::model10 training heartbeat $NOW cpu=${CPU:-0}% output_bytes=$SIZE"
             ps -p "$TRAIN_PID" -o pid=,etime=,%cpu=,%mem=,cmd= || true
-            du -sh ml-output 2>/dev/null || true
+            BUSY="$(awk -v cpu="${CPU:-0}" 'BEGIN { print (cpu >= 0.5) ? 1 : 0 }')"
+            if [ "$SIZE" = "$PREV_SIZE" ] && [ "$BUSY" -eq 0 ]; then
+              IDLE_TICKS=$((IDLE_TICKS + 1))
+            else
+              IDLE_TICKS=0
+            fi
+            if [ "$IDLE_TICKS" -ge 5 ]; then
+              echo "::warning::STALL WARNING: MODEL 10 training has shown no output growth and <0.5% Python CPU for $((IDLE_TICKS * 2)) minutes."
+              ps aux --forest | head -80 || true
+              docker stats --no-stream || true
+            fi
+            PREV_SIZE="$SIZE"
             sleep 120
           done
           wait "$TRAIN_PID"
