@@ -5273,3 +5273,37 @@ correctness requirement that the batch path cannot satisfy. Performance reports
 must expose documents seen, offers parsed/inserted, errors, and elapsed seconds.
 Game links and uncertain athlete identities remain conservative: unresolved
 rows are kept rather than guessed.
+
+
+## 90. ML data flow is layered and model upgrades do not silently change ingestion
+
+**Decided 2026-10-06 by the owner**, after repeated delays caused by mixing data
+collection, storage work and model experimentation.
+
+**Decision.** The project uses five explicit layers: immutable source archive,
+normalized source tables, canonical/derived warehouse, verified training snapshot,
+and model artifacts/validation marts. A model-version change normally operates only
+on the model/artifact layer and may consume new derived features, but it must not
+silently change how historical data is fetched, parsed, restored or identified.
+
+The MODEL 9 training dataset extraction remains the frozen baseline contract for
+MODEL 10 development. Snapshot restore may refresh PostgreSQL planner statistics
+with ANALYZE because that changes execution planning only, not rows, features or
+model semantics.
+
+Already-owned source files are processed locally once and written in bulk. Network
+discovery is for missing source material only. Expensive derived basketball history
+is built once and reused. Historical game and athlete linking are batch operations.
+
+**Why.** Large-data model development becomes slow and error-prone when every model
+experiment re-fetches or re-parses source data. Separation makes model iteration
+cheap while keeping source provenance and blind validation reproducible.
+
+**Storage pressure.** Hosted high-volume event data is a hot-window concern, not a
+reason to destroy history. Cold/archive transitions require immutable source proof,
+a successful rebuild test, verification, and explicit owner approval before any
+destructive production operation.
+
+**Condition.** Any future change that modifies both model logic and the ingest/storage
+path must be split into separately measured changes. Performance work must report
+batch counts and elapsed time so regressions are visible immediately.
