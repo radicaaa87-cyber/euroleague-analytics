@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         "mae_improvement_role_base_vs_naive": report.get("mae_improvement_role_base_vs_naive"),
         "mae_improvement_vs_naive": report.get("mae_improvement_vs_naive"),
         "mae_improvement_vs_l10": report["mae_improvement_vs_l10"],
+        "blind_test_uncertainty": report.get("blind_test_uncertainty"),
     }
     training_metadata = {
         "split": split,
@@ -73,6 +74,9 @@ def main(argv: list[str] | None = None) -> int:
         "selected_model": selected_model,
         "prediction_architecture": report.get("prediction_architecture", {}),
         "efficiency_priors": report.get("efficiency_priors", {}),
+        "uncertainty_calibration": report.get("uncertainty_calibration", {}),
+        "feature_provenance": report.get("feature_provenance", []),
+        "source_family_importance": report.get("source_family_importance", []),
         "auxiliary_targets": report.get("auxiliary_targets", {}),
     }
 
