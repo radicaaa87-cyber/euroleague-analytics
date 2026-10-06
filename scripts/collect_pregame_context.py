@@ -89,15 +89,13 @@ def _rss_items(query: str, *, limit: int) -> list[NewsItem]:
         source_node = item.find("source")
         source_name = _strip_html(source_node.text if source_node is not None else "")
         publisher_url = (
-            (source_node.attrib.get("url") or "").strip()
-            if source_node is not None
-            else ""
+            (source_node.attrib.get("url") or "").strip() if source_node is not None else ""
         )
         summary = _strip_html(item.findtext("description") or "")
 
         try:
             published = email.utils.parsedate_to_datetime(published_raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if published.tzinfo is None:
             published = published.replace(tzinfo=UTC)
@@ -138,12 +136,8 @@ def _upcoming_games(connection: psycopg.Connection[Any]) -> list[UpcomingGame]:
         result: list[UpcomingGame] = []
         for row in cursor.fetchall():
             season, gamecode, tipoff, home_code, home_name, away_code, away_name = row
-            result.append(
-                UpcomingGame(season, gamecode, tipoff, home_code, home_name or home_code)
-            )
-            result.append(
-                UpcomingGame(season, gamecode, tipoff, away_code, away_name or away_code)
-            )
+            result.append(UpcomingGame(season, gamecode, tipoff, home_code, home_name or home_code))
+            result.append(UpcomingGame(season, gamecode, tipoff, away_code, away_name or away_code))
         return result
 
 
@@ -285,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
             queries += 1
             try:
                 items = _rss_items(query, limit=args.items_per_query)
-            except (OSError, ET.ParseError):
+            except OSError, ET.ParseError:
                 items = []
             for item in items:
                 inserted += int(
@@ -308,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
                 queries += 1
                 try:
                     items = _rss_items(query, limit=args.items_per_query)
-                except (OSError, ET.ParseError):
+                except OSError, ET.ParseError:
                     continue
                 for item in items:
                     inserted += int(
@@ -321,9 +315,7 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     )
 
-    print(
-        f"pregame_context games_teams={len(games)} queries={queries} inserted={inserted}"
-    )
+    print(f"pregame_context games_teams={len(games)} queries={queries} inserted={inserted}")
     return 0
 
 
