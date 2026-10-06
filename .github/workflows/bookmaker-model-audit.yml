@@ -83,6 +83,5 @@ jobs:
 
       - name: Compare Mozzart lines with pregame averages
         env:
-          LIVE_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           WAREHOUSE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
         run: .venv/bin/python scripts/analyze_bookmaker_vs_average.py
