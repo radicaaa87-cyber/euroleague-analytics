@@ -54,6 +54,11 @@ STARBET_OTHER_MARKERS = (
 )
 MOZZART_SECTION_MARKERS = ("kosarka igraci",)
 MOZZART_POINTS_MARKER = "broj poena igraca na mecu"
+MOZZART_EUROLEAGUE_TEAM_TAGS = {
+    "Alb", "Arm", "Asv", "Baj", "Bar", "Bas", "Bes", "Crv", "Dub", "Efe",
+    "Fen", "Hap", "Mak", "Mon", "Oli", "Pan", "Par", "Prz", "Rea", "Val",
+    "Vir", "Žal",
+}
 GENERIC_EUROLEAGUE_MARKERS = ("evroliga", "euroleague")
 GENERIC_PLAYER_POINTS_MARKERS = (
     "poeni igraca",
@@ -322,13 +327,20 @@ def _parse_row(
     )
 
 def parse_mozzart_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]:
-    """Parse the central EuroLeague player-points line from Mozzart daily PDFs."""
+    """Parse only the central EuroLeague player-points table from Mozzart PDFs.
+
+    State is reset on every page so a later NBA/ABA page cannot inherit an
+    EuroLeague header. Rows with a non-EuroLeague team tag are rejected; after
+    two consecutive foreign-team rows the current table is considered finished.
+    """
     offers: list[ParsedOffer] = []
-    in_players = False
-    in_euroleague = False
-    points_header_seen = False
 
     for page_number, page_text in enumerate(pages, start=1):
+        in_players = False
+        in_euroleague = False
+        points_header_seen = False
+        foreign_rows = 0
+
         for raw_line in page_text.splitlines():
             line = SPACE_RE.sub(" ", raw_line).strip()
             key = _heading_key(line)
@@ -339,27 +351,48 @@ def parse_mozzart_player_points_pages(pages: Iterable[str]) -> list[ParsedOffer]
                 in_players = True
                 in_euroleague = False
                 points_header_seen = False
+                foreign_rows = 0
                 continue
 
-            if in_players and key == "evroliga":
+            if in_players and key in {"evroliga", "euroleague"}:
                 in_euroleague = True
                 points_header_seen = False
+                foreign_rows = 0
                 continue
 
             if in_players and in_euroleague and MOZZART_POINTS_MARKER in key:
                 points_header_seen = True
+                foreign_rows = 0
                 continue
 
             if in_players and in_euroleague and points_header_seen:
                 offer = _parse_row(line, bookmaker="mozzart", page_number=page_number)
                 if offer is not None:
-                    offers.append(offer)
+                    tokens = offer.participant_text.split()
+                    team_tag = tokens[-1] if tokens else ""
+                    if team_tag in MOZZART_EUROLEAGUE_TEAM_TAGS:
+                        offers.append(offer)
+                        foreign_rows = 0
+                    else:
+                        foreign_rows += 1
+                        if foreign_rows >= 2:
+                            in_euroleague = False
+                            points_header_seen = False
                     continue
 
-            if in_players and key in {"tenis", "fudbal", "kosarka"}:
+            if in_players and key in {
+                "tenis",
+                "fudbal",
+                "kosarka",
+                "nba",
+                "aba liga",
+                "evrokup",
+                "eurocup",
+            }:
                 in_players = False
                 in_euroleague = False
                 points_header_seen = False
+                foreign_rows = 0
 
     return offers
 
