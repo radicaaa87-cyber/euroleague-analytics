@@ -38,8 +38,7 @@ def match_offer_to_game(
         if candidate.athlete_id == athlete_id and candidate.game_date == offer_date
     ]
     unique_games = {
-        (candidate.season_code, candidate.gamecode, candidate.team_code)
-        for candidate in exact
+        (candidate.season_code, candidate.gamecode, candidate.team_code) for candidate in exact
     }
     if len(unique_games) != 1:
         return None
