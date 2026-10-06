@@ -34,8 +34,7 @@ def _load_candidates(connection: psycopg.Connection[Any]) -> list[AthleteCandida
             """
         )
         return [
-            AthleteCandidate(athlete_id=row[0], display_name=row[1])
-            for row in cursor.fetchall()
+            AthleteCandidate(athlete_id=row[0], display_name=row[1]) for row in cursor.fetchall()
         ]
 
 
