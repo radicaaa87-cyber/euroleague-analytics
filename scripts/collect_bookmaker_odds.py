@@ -604,6 +604,121 @@ def _insert_offer(
         return cursor.fetchone() is not None
 
 
+
+def _prepare_offer_rows(
+    *,
+    document_id: int,
+    offer_date: date | None,
+    offers: list[ParsedOffer],
+    candidates: list[AthleteCandidate],
+    identity_cache: dict[tuple[str, str], Any],
+) -> list[tuple[Any, ...]]:
+    """Prepare raw offer rows without per-offer database lookups."""
+    rows: list[tuple[Any, ...]] = []
+    for offer in offers:
+        cache_key = (offer.bookmaker, offer.participant_text)
+        identity = identity_cache.get(cache_key)
+        if identity is None:
+            identity = resolve_participant(
+                offer.participant_text,
+                candidates,
+                bookmaker=offer.bookmaker,
+            )
+            identity_cache[cache_key] = identity
+
+        rows.append(
+            (
+                document_id,
+                offer.bookmaker,
+                offer_date,
+                offer.event_time_local,
+                offer.source_event_code,
+                offer.participant_text,
+                identity.player_name_raw,
+                identity.player_name_normalized,
+                identity.team_name_raw,
+                identity.athlete_id,
+                identity.method,
+                identity.confidence,
+                offer.points_line,
+                offer.under_odds,
+                offer.over_odds,
+                offer.page_number,
+                offer.row_text,
+                offer.row_sha256,
+            )
+        )
+    return rows
+
+
+def _insert_offers_bulk(
+    connection: psycopg.Connection[Any],
+    rows: list[tuple[Any, ...]],
+) -> int:
+    """Bulk-insert raw offers in one executemany pipeline.
+
+    Athlete identity is resolved in Python, while game linking is deliberately
+    deferred. This avoids one game-resolution query plus one insert round-trip
+    per offer and makes archive ingestion scale to thousands of rows.
+    """
+    if not rows:
+        return 0
+
+    document_ids = sorted({int(row[0]) for row in rows})
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select count(*)
+            from bookmaker_player_points_offer
+            where document_id = any(%s)
+            """,
+            (document_ids,),
+        )
+        before = int(cursor.fetchone()[0])
+
+        cursor.executemany(
+            """
+            insert into bookmaker_player_points_offer (
+                document_id,
+                bookmaker,
+                offer_date,
+                event_time_local,
+                source_event_code,
+                participant_text,
+                player_name_raw,
+                player_name_normalized,
+                team_name_raw,
+                athlete_id,
+                athlete_match_method,
+                athlete_match_confidence,
+                points_line,
+                under_odds,
+                over_odds,
+                page_number,
+                row_text,
+                row_sha256
+            )
+            values (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s,
+                %s, %s, %s, %s, %s, %s
+            )
+            on conflict (document_id, row_sha256) do nothing
+            """,
+            rows,
+        )
+
+        cursor.execute(
+            """
+            select count(*)
+            from bookmaker_player_points_offer
+            where document_id = any(%s)
+            """,
+            (document_ids,),
+        )
+        after = int(cursor.fetchone()[0])
+    return max(after - before, 0)
+
+
 def _start_collection(
     connection: psycopg.Connection[Any],
     *,
@@ -705,6 +820,8 @@ def main(argv: list[str] | None = None) -> int:
     inserted_offer_count = 0
     error_count = 0
     errors: list[dict[str, str]] = []
+    pending_offer_rows: list[tuple[Any, ...]] = []
+    identity_cache: dict[tuple[str, str], Any] = {}
 
     with psycopg.connect(
         settings.url(),
@@ -750,17 +867,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if offers:
                     parsed_document_count += 1
-                for offer in offers:
-                    inserted_offer_count += int(
-                        _insert_offer(
-                            connection,
+                    pending_offer_rows.extend(
+                        _prepare_offer_rows(
                             document_id=document_id,
                             offer_date=document_date,
-                            offer=offer,
+                            offers=offers,
                             candidates=candidates,
+                            identity_cache=identity_cache,
                         )
                     )
-                time_module.sleep(0.15)
             except Exception as exc:
                 error_count += 1
                 errors.append(
@@ -770,6 +885,11 @@ def main(argv: list[str] | None = None) -> int:
                         "error": f"{type(exc).__name__}: {exc}",
                     }
                 )
+
+        inserted_offer_count = _insert_offers_bulk(
+            connection,
+            pending_offer_rows,
+        )
 
         _finish_collection(
             connection,
