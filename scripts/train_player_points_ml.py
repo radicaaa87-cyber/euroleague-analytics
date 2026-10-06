@@ -1,4 +1,4 @@
-"""Benchmark four tree-boosting families for EuroLeague player points.
+"""Benchmark six model families for EuroLeague player points.
 
 The point model is residual by construction: every row starts from a leakage-safe
 pregame simple scoring average, the model learns the delta from that baseline,
@@ -15,7 +15,7 @@ Locked split:
     E2023 + E2024   -> final train for the locked validation winner
     E2025 (2025/26) -> one blind test of that locked winner
 
-HistGradientBoosting, XGBoost, CatBoost and LightGBM all receive the same
+Ridge, ExtraTrees, HistGradientBoosting, XGBoost, CatBoost and LightGBM all receive the same
 feature matrix and the same split. E2025 never changes the selected family or
 its parameters.
 """
@@ -65,7 +65,7 @@ DEFAULT_TEST_SEASON = "E2025"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark HistGBR/XGBoost/CatBoost/LightGBM on E2024 validation, "
+            "Benchmark Ridge/ExtraTrees/HistGBR/XGBoost/CatBoost/LightGBM on E2024 validation, "
             "then blind-test the locked winner on E2025."
         )
     )
@@ -1039,7 +1039,7 @@ def main(argv: list[str] | None = None) -> int:
         "grouped_source_permutation_importance": grouped_source_importance,
         "validation_controls": validation_controls,
         "notes": [
-            "All four model families use the identical feature matrix and chronological split.",
+            "All six model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
             "Only the locked E2024 validation winner is scored on the E2025 blind test.",
             "The naive baseline is the simple average of prior games in the current season; "
