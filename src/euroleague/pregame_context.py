@@ -345,6 +345,23 @@ select
     tc.team_max_source_confidence,
     tc.team_max_severity,
     count(tr.player_id) as teammate_availability_signal_count,
+    coalesce(
+        jsonb_agg(
+            jsonb_build_object(
+                'player_id', tr.player_id,
+                'position', tr.teammate_position_name,
+                'out_score', tr.out_score,
+                'doubt_score', tr.doubt_score,
+                'avg_minutes_l5', tr.avg_minutes_l5,
+                'avg_fga_l5', tr.avg_fga_l5,
+                'source_confidence', tr.source_confidence,
+                'severity', tr.severity,
+                'event_cutoff_time', tr.event_cutoff_time
+            )
+            order by greatest(tr.out_score, tr.doubt_score) desc, tr.player_id
+        ) filter (where tr.player_id is not null),
+        '[]'::jsonb
+    ) as teammate_availability,
     coalesce(max(tr.source_confidence), 0) as teammate_max_source_confidence,
     coalesce(max(tr.severity), 0) as teammate_max_severity,
     greatest(
