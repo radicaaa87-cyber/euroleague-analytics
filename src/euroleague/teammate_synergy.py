@@ -8,7 +8,6 @@ meaningful floor time".
 
 from __future__ import annotations
 
-
 TEAMMATE_SYNERGY_SQL = """
 with cutoff as (
     select coalesce(%s::timestamptz, now()) as at
