@@ -95,8 +95,11 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                 tg.is_home,
                 p.is_starter,
                 p.points,
+                p.field_goals_made,
                 p.field_goals_attempted,
+                p.three_pointers_made,
                 p.three_pointers_attempted,
+                p.free_throws_made,
                 p.free_throws_attempted,
                 p.{seconds_column} as seconds_played,
                 p.team_possessions,
@@ -172,6 +175,38 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
                     / nullif(sum(seconds_played) filter (where rn <= 10), 0),
                     3
                 ) as l10_fga_per_minute,
+                round(
+                    (
+                        sum(field_goals_made - three_pointers_made)
+                            filter (where rn <= 10)
+                    )::numeric
+                    / nullif(
+                        sum(field_goals_attempted - three_pointers_attempted)
+                            filter (where rn <= 10),
+                        0
+                    ),
+                    4
+                ) as l10_2p_pct,
+                round(
+                    (
+                        sum(three_pointers_made) filter (where rn <= 10)
+                    )::numeric
+                    / nullif(
+                        sum(three_pointers_attempted) filter (where rn <= 10),
+                        0
+                    ),
+                    4
+                ) as l10_3p_pct,
+                round(
+                    (
+                        sum(free_throws_made) filter (where rn <= 10)
+                    )::numeric
+                    / nullif(
+                        sum(free_throws_attempted) filter (where rn <= 10),
+                        0
+                    ),
+                    4
+                ) as l10_ft_pct,
                 round(avg(team_possessions::numeric)
                     filter (where rn <= 10), 2) as l10_team_possessions,
 
