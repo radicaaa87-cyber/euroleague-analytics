@@ -138,7 +138,7 @@ jobs:
           path: .training-snapshot
           key: ml-training-warehouse-pg17-${{ hashFiles('.github/ml-training-snapshot.version', 'migrations/*.up.sql') }}
 
-      - name: Benchmark four model families and blind-test the validation winner
+      - name: Benchmark six model families and blind-test the validation winner
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/euroleague_test
           PGOPTIONS: "-c search_path=warehouse"
