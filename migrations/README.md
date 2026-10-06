@@ -41,6 +41,7 @@ MCP — see `DECISIONS.md` item 10 for why this rather than the Supabase CLI.
 | `0034_acb_mcp_reader_access` | Grants `el_reader` read-only `select` access to `acb_game`, `acb_player_game`, and `acb_event` so the hosted MCP can serve the three source-native Liga Endesa tools. Grants no write privilege. Applied to production on 2026-10-04 after confirming `el_reader` has `bypassrls`; production then reported `select=true` on all three tables. |
 | `0035_model_registry` | Adds the private model registry for immutable model versions, artifact checksums/locations, training lineage, feature lists, metrics and lifecycle status. A partial unique index permits at most one `production` version per model family; `el_reader` and `el_tester` receive read-only access. **Applied on 2026-10-05 UTC as `20261005214945`** through the Supabase MCP. |
 | `0036_model_artifact_bucket` | Adds the private `model-artifacts` Supabase Storage bucket for immutable trained-model files. The migration is storage-schema-aware so the stock PostgreSQL migration gate can still run; rollback refuses to remove a non-empty artifact bucket. **Applied on 2026-10-05 UTC as `20261005215528`** through the Supabase MCP. |
+| `0037_pregame_context` | Adds the private leakage-safe `pregame_context_event` archive plus player/team context feature views for evidence published inside the 72-hour window before tipoff. Post-tipoff evidence is excluded by consumers; public API roles remain revoked and `el_reader`/`el_tester` receive read-only access. |
 
 ## The 0013 rehearsal, 2026-08-27
 
