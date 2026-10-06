@@ -1535,6 +1535,87 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             order by game_tipoff_utc, gamecode
         )
     ),
+    player_season_summary as (
+        select
+            season_code,
+            player_id,
+            (array_agg(team_code order by game_tipoff_utc, gamecode))[1]
+                as season_first_team_code,
+            (array_agg(team_code order by game_tipoff_utc desc, gamecode desc))[1]
+                as season_last_team_code,
+            count(*) as season_games,
+            round(avg(seconds_played::numeric / 60.0), 3)
+                as season_minutes,
+            round(avg(field_goals_attempted::numeric), 3)
+                as season_fga,
+            round(avg(points::numeric), 3)
+                as season_points,
+            round(avg(case when is_starter then 1.0 else 0.0 end), 4)
+                as season_starter_rate,
+            round(
+                60.0 * sum(field_goals_attempted)::numeric
+                    / nullif(sum(seconds_played), 0),
+                4
+            ) as season_fga_per_minute,
+            round(
+                sum(three_pointers_attempted)::numeric
+                    / nullif(sum(field_goals_attempted), 0),
+                4
+            ) as season_three_share,
+            round(
+                sum(field_goals_made - three_pointers_made)::numeric
+                    / nullif(
+                        sum(field_goals_attempted - three_pointers_attempted),
+                        0
+                    ),
+                4
+            ) as season_two_pct,
+            round(
+                sum(three_pointers_made)::numeric
+                    / nullif(sum(three_pointers_attempted), 0),
+                4
+            ) as season_three_pct,
+            round(
+                sum(free_throws_made)::numeric
+                    / nullif(sum(free_throws_attempted), 0),
+                4
+            ) as season_ft_pct
+        from player_hand_events
+        group by season_code, player_id
+    ),
+    player_season_transition as (
+        select
+            season_code,
+            player_id,
+            lag(season_code) over season_order as previous_season_code,
+            lag(season_last_team_code) over season_order
+                as previous_season_last_team_code,
+            lag(season_games) over season_order
+                as previous_season_games,
+            lag(season_minutes) over season_order
+                as previous_season_minutes,
+            lag(season_fga) over season_order
+                as previous_season_fga,
+            lag(season_points) over season_order
+                as previous_season_points,
+            lag(season_starter_rate) over season_order
+                as previous_season_starter_rate,
+            lag(season_fga_per_minute) over season_order
+                as previous_season_fga_per_minute,
+            lag(season_three_share) over season_order
+                as previous_season_three_share,
+            lag(season_two_pct) over season_order
+                as previous_season_two_pct,
+            lag(season_three_pct) over season_order
+                as previous_season_three_pct,
+            lag(season_ft_pct) over season_order
+                as previous_season_ft_pct
+        from player_season_summary
+        window season_order as (
+            partition by player_id
+            order by season_code
+        )
+    ),
     player_features as (
         select
             *,
@@ -1547,6 +1628,73 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                 ),
                 3
             ) as pre_naive_points_mean,
+
+            pst.previous_season_games
+                as pre_transition_previous_season_games,
+            pst.previous_season_minutes
+                as pre_transition_previous_season_minutes,
+            pst.previous_season_fga
+                as pre_transition_previous_season_fga,
+            pst.previous_season_points
+                as pre_transition_previous_season_points,
+            pst.previous_season_starter_rate
+                as pre_transition_previous_season_starter_rate,
+            pst.previous_season_fga_per_minute
+                as pre_transition_previous_season_fga_per_minute,
+            pst.previous_season_three_share
+                as pre_transition_previous_season_three_share,
+            pst.previous_season_two_pct
+                as pre_transition_previous_season_two_pct,
+            pst.previous_season_three_pct
+                as pre_transition_previous_season_three_pct,
+            pst.previous_season_ft_pct
+                as pre_transition_previous_season_ft_pct,
+            case
+                when pst.previous_season_last_team_code is null then 0
+                when team_code <> pst.previous_season_last_team_code then 1
+                else 0
+            end as pre_transition_team_changed,
+            case
+                when count(*) over wseason < 5 then 1
+                else 0
+            end as pre_transition_early_season,
+            round(
+                avg(seconds_played::numeric / 60.0) over wseason
+                    - pst.previous_season_minutes,
+                3
+            ) as pre_transition_minutes_gap_vs_previous_season,
+            round(
+                avg(field_goals_attempted::numeric) over wseason
+                    - pst.previous_season_fga,
+                3
+            ) as pre_transition_fga_gap_vs_previous_season,
+            round(
+                avg(points::numeric) over wseason
+                    - pst.previous_season_points,
+                3
+            ) as pre_transition_points_gap_vs_previous_season,
+            round(
+                avg(case when is_starter then 1.0 else 0.0 end) over wseason
+                    - pst.previous_season_starter_rate,
+                4
+            ) as pre_transition_starter_gap_vs_previous_season,
+            round(
+                (
+                    60.0 * sum(field_goals_attempted) over wseason
+                    / nullif(sum(seconds_played) over wseason, 0)
+                ) - pst.previous_season_fga_per_minute,
+                4
+            ) as pre_transition_fga_per_minute_gap_vs_previous_season,
+            round(
+                avg(seconds_played::numeric / 60.0) over w3
+                    - pst.previous_season_minutes,
+                3
+            ) as pre_transition_l3_minutes_gap_vs_previous_season,
+            round(
+                avg(field_goals_attempted::numeric) over w3
+                    - pst.previous_season_fga,
+                3
+            ) as pre_transition_l3_fga_gap_vs_previous_season,
 
             max(player_height_cm) over wprofile as pre_player_height_cm,
             max(player_weight_kg) over wprofile as pre_player_weight_kg,
@@ -2107,7 +2255,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
                     - avg(rotation_closing_5m_share) over w10,
                 4
             ) as pre_rotation_closing_share_trend_l3_vs_l10
-        from player_hand_events
+        from player_hand_events phe
+        left join player_season_transition pst
+          on pst.season_code = phe.season_code
+         and pst.player_id = phe.player_id
         window
             wall as (
                 partition by player_id
@@ -2669,6 +2820,26 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_rotation_l5_closing_5m_share,
         pf.pre_rotation_l10_closing_5m_share,
         pf.pre_rotation_closing_share_trend_l3_vs_l10,
+
+        pf.pre_transition_previous_season_games,
+        pf.pre_transition_previous_season_minutes,
+        pf.pre_transition_previous_season_fga,
+        pf.pre_transition_previous_season_points,
+        pf.pre_transition_previous_season_starter_rate,
+        pf.pre_transition_previous_season_fga_per_minute,
+        pf.pre_transition_previous_season_three_share,
+        pf.pre_transition_previous_season_two_pct,
+        pf.pre_transition_previous_season_three_pct,
+        pf.pre_transition_previous_season_ft_pct,
+        pf.pre_transition_team_changed,
+        pf.pre_transition_early_season,
+        pf.pre_transition_minutes_gap_vs_previous_season,
+        pf.pre_transition_fga_gap_vs_previous_season,
+        pf.pre_transition_points_gap_vs_previous_season,
+        pf.pre_transition_starter_gap_vs_previous_season,
+        pf.pre_transition_fga_per_minute_gap_vs_previous_season,
+        pf.pre_transition_l3_minutes_gap_vs_previous_season,
+        pf.pre_transition_l3_fga_gap_vs_previous_season,
 
         pf.pre_last_top_pair_shared_minutes,
         pf.pre_last_top_pair_net_rating,
