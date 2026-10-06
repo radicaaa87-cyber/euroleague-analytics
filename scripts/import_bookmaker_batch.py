@@ -333,12 +333,11 @@ def _finish_run(
         )
 
 
-def import_batch(
+def import_payload(
+    payload: dict[str, Any],
     *,
-    input_path: Path,
     chunk_size: int,
 ) -> dict[str, Any]:
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
     documents = list(payload.get("documents") or [])
     offers = list(payload.get("offers") or [])
     bookmaker = str(payload["bookmaker"])
@@ -389,6 +388,15 @@ def import_batch(
         "inserted_offers": inserted_offer_count,
         "identity_candidates": len(candidates),
     }
+
+
+def import_batch(
+    *,
+    input_path: Path,
+    chunk_size: int,
+) -> dict[str, Any]:
+    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    return import_payload(payload, chunk_size=chunk_size)
 
 
 def main(argv: list[str] | None = None) -> int:
