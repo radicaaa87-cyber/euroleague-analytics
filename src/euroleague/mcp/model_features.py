@@ -15,6 +15,7 @@ from euroleague.mcp import queries
 from euroleague.mcp.envelope import build_response
 from euroleague.mcp.resolve import resolve_player, resolve_season, resolve_team
 from euroleague.pregame_context import ROLE_CONTEXT_SQL
+from euroleague.teammate_combinations import KEY_LINEUP_SQL, TEAMMATE_TRIPLE_SQL
 from euroleague.teammate_synergy import TEAMMATE_SYNERGY_SQL
 from euroleague.travel import travel_context
 
@@ -521,8 +522,59 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         signal = availability_by_player.get(str(pair.get("teammate_id")))
         if signal is not None:
             pair["pregame_availability"] = signal
+
+    cursor.execute(
+        TEAMMATE_TRIPLE_SQL,
+        (
+            cross_competition_cutoff,
+            season_code,
+            player_id,
+            synergy_team_code,
+            synergy_team_code,
+            20,
+            player_id,
+            player_id,
+            10,
+        ),
+    )
+    triple_rows = queries._rows(cursor)
+    for triple in triple_rows:
+        availability: list[dict[str, Any]] = []
+        for key in ("teammate_a_id", "teammate_b_id"):
+            signal = availability_by_player.get(str(triple.get(key)))
+            if signal is not None:
+                availability.append(signal)
+        if availability:
+            triple["pregame_availability"] = availability
+
+    cursor.execute(
+        KEY_LINEUP_SQL,
+        (
+            cross_competition_cutoff,
+            season_code,
+            player_id,
+            synergy_team_code,
+            synergy_team_code,
+            20,
+            player_id,
+            6,
+        ),
+    )
+    lineup_rows = queries._rows(cursor)
+    for lineup in lineup_rows:
+        unavailable = [
+            availability_by_player[str(member["player_id"])]
+            for member in lineup.get("players", [])
+            if member.get("player_id")
+            and str(member["player_id"]) in availability_by_player
+        ]
+        if unavailable:
+            lineup["pregame_unavailable_players"] = unavailable
+
     if rows:
         rows[0]["teammate_pair_context"] = teammate_rows
+        rows[0]["teammate_triple_context"] = triple_rows
+        rows[0]["key_lineup_context"] = lineup_rows
 
     if arguments.get("opponent"):
         opponent_code = resolve_team(cursor, season_code, arguments["opponent"])
@@ -598,6 +650,10 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
             "stint minutes and on-court team ratings with the target player's historical "
             "PTS/min, FGA/min and minutes in games with versus without each teammate. Small "
             "samples are labeled explicitly and every row is cut off before the target tipoff.",
+            "teammate_triple_context requires at least 5 games, 75 actual shared minutes and "
+            "3 comparison games before it can be labeled positive or negative. key_lineup_context "
+            "uses exact five-man units and requires at least 4 games, 60 shared minutes and "
+            "50 team possessions; otherwise the combination remains small_sample.",
             "The bookmaker line is intentionally excluded. Produce the projection first, "
             "then calculate EDGE against the central line.",
         ],
