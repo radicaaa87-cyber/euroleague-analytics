@@ -253,9 +253,7 @@ def _best_prefix_split(
         exact_matches.sort(key=lambda item: (item[1], len(item[2])), reverse=True)
         best_split, best_length = exact_matches[0][1], len(exact_matches[0][2])
         strongest = [
-            item
-            for item in exact_matches
-            if item[1] == best_split and len(item[2]) == best_length
+            item for item in exact_matches if item[1] == best_split and len(item[2]) == best_length
         ]
         athlete_ids = {item[0].athlete_id for item in strongest}
         if len(athlete_ids) != 1:
