@@ -1928,6 +1928,137 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             target_player_id,
             target_tipoff_utc
     ),
+    historical_context_events as (
+        select
+            pf.season_code,
+            pf.gamecode,
+            pf.player_id as target_player_id,
+            pf.game_tipoff_utc,
+            e.player_id as context_player_id,
+            e.event_type,
+            e.role_direction,
+            e.severity,
+            e.source_confidence,
+            e.role_impact_score,
+            e.published_at,
+            recent.avg_minutes_l5,
+            recent.avg_fga_l5
+        from player_features pf
+        join pregame_context_event e
+          on e.season_code = pf.season_code
+         and e.gamecode = pf.gamecode
+         and e.team_code = pf.team_code
+         and e.published_at < pf.game_tipoff_utc
+         and e.published_at >= pf.game_tipoff_utc - interval '72 hours'
+        left join lateral (
+            select
+                round(avg(previous.minutes), 3) as avg_minutes_l5,
+                round(avg(previous.fga), 3) as avg_fga_l5
+            from (
+                select
+                    hist.seconds_played::numeric / 60.0 as minutes,
+                    hist.field_goals_attempted::numeric as fga
+                from player_base hist
+                where hist.player_id = e.player_id
+                  and hist.team_code = pf.team_code
+                  and hist.game_tipoff_utc < pf.game_tipoff_utc
+                order by hist.game_tipoff_utc desc, hist.gamecode desc
+                limit 5
+            ) previous
+        ) recent
+          on e.player_id is not null
+         and e.player_id <> pf.player_id
+    ),
+    historical_context_features as (
+        select
+            season_code,
+            gamecode,
+            target_player_id as player_id,
+            max(published_at) as context_feature_cutoff_time,
+            count(*) as pre_context_event_count,
+            count(*) filter (
+                where context_player_id = target_player_id
+            ) as pre_self_context_event_count,
+            count(*) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+            ) as pre_teammate_context_event_count,
+            count(*) filter (
+                where context_player_id is null
+            ) as pre_team_context_event_count,
+            count(*) filter (
+                where source_confidence >= 0.90
+            ) as pre_context_official_event_count,
+            count(*) filter (
+                where source_confidence >= 0.65
+                  and source_confidence < 0.90
+            ) as pre_context_reported_event_count,
+            count(*) filter (
+                where source_confidence < 0.65
+            ) as pre_context_weak_event_count,
+            coalesce(max(source_confidence), 0)
+                as pre_context_max_source_confidence,
+            coalesce(max(severity), 0)
+                as pre_context_max_severity,
+            coalesce(max(severity * source_confidence) filter (
+                where context_player_id = target_player_id
+                  and event_type = 'availability_out'
+            ), 0) as pre_self_out_score,
+            coalesce(max(severity * source_confidence) filter (
+                where context_player_id = target_player_id
+                  and event_type = 'availability_doubt'
+            ), 0) as pre_self_doubt_score,
+            coalesce(max(severity * source_confidence) filter (
+                where context_player_id = target_player_id
+                  and event_type = 'return'
+            ), 0) as pre_self_return_score,
+            round(coalesce(sum(greatest(role_impact_score, 0)) filter (
+                where context_player_id = target_player_id
+            ), 0), 5) as pre_self_role_up_score,
+            round(coalesce(sum(greatest(-role_impact_score, 0)) filter (
+                where context_player_id = target_player_id
+            ), 0), 5) as pre_self_role_down_score,
+            round(coalesce(sum(severity * source_confidence) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_out'
+            ), 0), 5) as pre_teammate_out_score_sum,
+            round(coalesce(sum(severity * source_confidence) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_doubt'
+            ), 0), 5) as pre_teammate_doubt_score_sum,
+            round(coalesce(sum(
+                coalesce(avg_minutes_l5, 0) * severity * source_confidence
+            ) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_out'
+            ), 0), 3) as pre_teammate_out_vacated_minutes_l5,
+            round(coalesce(sum(
+                coalesce(avg_fga_l5, 0) * severity * source_confidence
+            ) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_out'
+            ), 0), 3) as pre_teammate_out_vacated_fga_l5,
+            round(coalesce(sum(
+                coalesce(avg_minutes_l5, 0) * severity * source_confidence
+            ) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_doubt'
+            ), 0), 3) as pre_teammate_doubt_vacated_minutes_l5,
+            round(coalesce(sum(
+                coalesce(avg_fga_l5, 0) * severity * source_confidence
+            ) filter (
+                where context_player_id is not null
+                  and context_player_id <> target_player_id
+                  and event_type = 'availability_doubt'
+            ), 0), 3) as pre_teammate_doubt_vacated_fga_l5
+        from historical_context_events
+        group by season_code, gamecode, target_player_id
+    ),
     team_features as (
         select
             tg.season_code,
