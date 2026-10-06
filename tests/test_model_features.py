@@ -585,7 +585,7 @@ def test_training_query_never_uses_target_game_in_rolling_windows() -> None:
     assert "pre_fga_spike_role_expansion_share" in sql
     assert "pre_fga_spike_unexplained_share" in sql
     assert "v_athlete_game_history" in sql
-    assert "h.source = 'ACB'" in sql
+    assert "h.source = 'acb'" in sql
     assert "h.utc_date < pf.game_tipoff_utc" in sql
     assert "pre_acb_l5_minutes" in sql
     assert "pre_acb_l5_fga" in sql
