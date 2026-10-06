@@ -30,9 +30,11 @@ def feature_provenance(feature: str) -> FeatureProvenance:
             "Static home/away game context.",
         )
 
-    if name.startswith("pre_context_") or name.startswith("pre_self_") or name.startswith(
-        "pre_teammate_out"
-    ) or name.startswith("pre_teammate_doubt"):
+    if (
+        name.startswith("pre_context_")
+        or name.startswith("pre_self_")
+        or name.startswith("pre_teammate_")
+    ):
         return FeatureProvenance(
             feature,
             "pregame_news",
