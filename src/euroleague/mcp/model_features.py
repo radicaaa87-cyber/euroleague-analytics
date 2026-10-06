@@ -512,6 +512,15 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         ),
     )
     teammate_rows = queries._rows(cursor)
+    availability_by_player = {
+        str(signal["player_id"]): signal
+        for signal in target_context.get("teammate_availability", [])
+        if signal.get("player_id")
+    }
+    for pair in teammate_rows:
+        signal = availability_by_player.get(str(pair.get("teammate_id")))
+        if signal is not None:
+            pair["pregame_availability"] = signal
     if rows:
         rows[0]["teammate_pair_context"] = teammate_rows
 
