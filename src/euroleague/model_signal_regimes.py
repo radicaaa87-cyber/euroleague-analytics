@@ -561,14 +561,10 @@ def classify_efficiency_cycles(
             else np.nan
         )
         ts_cooling = bool(
-            np.isfinite(l3_ts[row])
-            and np.isfinite(l5_ts[row])
-            and l3_ts[row] <= l5_ts[row] - 0.015
+            np.isfinite(l3_ts[row]) and np.isfinite(l5_ts[row]) and l3_ts[row] <= l5_ts[row] - 0.015
         )
         ts_recovering = bool(
-            np.isfinite(l3_ts[row])
-            and np.isfinite(l5_ts[row])
-            and l3_ts[row] >= l5_ts[row] + 0.015
+            np.isfinite(l3_ts[row]) and np.isfinite(l5_ts[row]) and l3_ts[row] >= l5_ts[row] + 0.015
         )
         ts_extreme = bool(
             (np.isfinite(ts_short_gap) and ts_short_gap >= 0.05)
@@ -614,11 +610,7 @@ def classify_efficiency_cycles(
             )
         )
         volume_recovering = bool(
-            (
-                np.isfinite(l3_fga[row])
-                and np.isfinite(l5_fga[row])
-                and l3_fga[row] >= l5_fga[row]
-            )
+            (np.isfinite(l3_fga[row]) and np.isfinite(l5_fga[row]) and l3_fga[row] >= l5_fga[row])
             or (
                 np.isfinite(l3_minutes[row])
                 and np.isfinite(l5_minutes[row])
@@ -634,8 +626,7 @@ def classify_efficiency_cycles(
             elif mature and (near_personal_max or ts_extreme) and volume_not_rising:
                 labels.append("hot_regression_risk")
             elif not mature and (
-                (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] > 0)
-                or ts_recovering
+                (np.isfinite(last_ts_delta[row]) and last_ts_delta[row] > 0) or ts_recovering
             ):
                 labels.append("hot_start")
             else:
@@ -729,12 +720,7 @@ def summarize_efficiency_cycles(
     actual_values = np.asarray(actual, dtype=float)
     naive_values = np.asarray(naive, dtype=float)
     predicted_values = np.asarray(predicted, dtype=float)
-    if not (
-        len(actual_values)
-        == len(naive_values)
-        == len(predicted_values)
-        == len(labels)
-    ):
+    if not (len(actual_values) == len(naive_values) == len(predicted_values) == len(labels)):
         raise ValueError("actual, naive, predicted and labels must align.")
 
     actual_delta = actual_values - naive_values
