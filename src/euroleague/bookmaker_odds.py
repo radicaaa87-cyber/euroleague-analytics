@@ -414,6 +414,11 @@ def parse_generic_euroleague_player_points_pages(
     lines_since_header = 0
 
     for page_number, page_text in enumerate(pages, start=1):
+        # Require the EuroLeague marker on each PDF page. This is intentionally
+        # strict so a later ABA/NBA page cannot inherit EuroLeague state.
+        euroleague_seen = False
+        in_points = False
+        lines_since_header = 0
         for raw_line in page_text.splitlines():
             line = SPACE_RE.sub(" ", raw_line).strip()
             key = _heading_key(line)
