@@ -108,6 +108,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ls.gamecode,
             lp.player_id,
             ls.home_lineup_id as lineup_id,
+            ls.start_elapsed_raw,
+            ls.end_elapsed_raw,
             greatest(ls.duration_seconds_raw, 0) as duration_seconds,
             ls.home_points as team_points,
             ls.away_points as opponent_points,
@@ -129,6 +131,8 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             ls.gamecode,
             lp.player_id,
             ls.away_lineup_id as lineup_id,
+            ls.start_elapsed_raw,
+            ls.end_elapsed_raw,
             greatest(ls.duration_seconds_raw, 0) as duration_seconds,
             ls.away_points as team_points,
             ls.home_points as opponent_points,
@@ -142,6 +146,78 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         join v_lineup_player lp
           on lp.lineup_id = ls.away_lineup_id
         where not g.excluded_by_default
+    ),
+    player_stint_ordered as (
+        select
+            *,
+            row_number() over (
+                partition by season_code, gamecode, player_id
+                order by start_elapsed_raw, end_elapsed_raw, lineup_id
+            ) as rotation_stint_order,
+            row_number() over (
+                partition by season_code, gamecode, player_id
+                order by end_elapsed_raw desc, start_elapsed_raw desc, lineup_id
+            ) as rotation_stint_order_desc,
+            max(end_elapsed_raw) over (
+                partition by season_code, gamecode
+            ) as rotation_game_end_elapsed
+        from player_stint_rows
+        where start_elapsed_raw is not null
+          and end_elapsed_raw is not null
+    ),
+    player_rotation_game as (
+        select
+            season_code,
+            gamecode,
+            player_id,
+            count(*) as rotation_stint_count,
+            round(
+                sum(duration_seconds)::numeric / 60.0,
+                3
+            ) as rotation_stint_minutes,
+            round(
+                max(duration_seconds)::numeric / 60.0,
+                3
+            ) as rotation_longest_stint_minutes,
+            round(
+                max(duration_seconds) filter (
+                    where rotation_stint_order = 1
+                )::numeric / 60.0,
+                3
+            ) as rotation_first_stint_minutes,
+            round(
+                max(end_elapsed_raw) filter (
+                    where rotation_stint_order = 1
+                )::numeric / 60.0,
+                3
+            ) as rotation_first_exit_elapsed_minutes,
+            round(
+                max(start_elapsed_raw) filter (
+                    where rotation_stint_order_desc = 1
+                )::numeric / 60.0,
+                3
+            ) as rotation_last_entry_elapsed_minutes,
+            max(
+                case
+                    when end_elapsed_raw >= rotation_game_end_elapsed - 30 then 1
+                    else 0
+                end
+            ) as rotation_closed_game,
+            round(
+                sum(
+                    greatest(
+                        least(end_elapsed_raw, rotation_game_end_elapsed)
+                            - greatest(
+                                start_elapsed_raw,
+                                rotation_game_end_elapsed - 300
+                            ),
+                        0
+                    )
+                )::numeric / 300.0,
+                4
+            ) as rotation_closing_5m_share
+        from player_stint_ordered
+        group by season_code, gamecode, player_id
     ),
     player_stint_summary as (
         select
@@ -1070,6 +1146,15 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             r2.role2_mean_teammate_off_fga_uplift,
             r2.role2_max_teammate_off_fga_uplift,
 
+            coalesce(rot.rotation_stint_count, 0) as rotation_stint_count,
+            rot.rotation_stint_minutes,
+            rot.rotation_longest_stint_minutes,
+            rot.rotation_first_stint_minutes,
+            rot.rotation_first_exit_elapsed_minutes,
+            rot.rotation_last_entry_elapsed_minutes,
+            coalesce(rot.rotation_closed_game, 0) as rotation_closed_game,
+            rot.rotation_closing_5m_share,
+
             coalesce(sg.pbp_stint_count, 0) as pbp_stint_count,
             sg.pbp_avg_stint_seconds,
             sg.pbp_max_stint_seconds,
@@ -1125,6 +1210,10 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
           on r2.season_code = p.season_code
          and r2.gamecode = p.gamecode
          and r2.player_id = p.player_id
+        left join player_rotation_game rot
+          on rot.season_code = p.season_code
+         and rot.gamecode = p.gamecode
+         and rot.player_id = p.player_id
         left join player_top_pair_pregame pair
           on pair.season_code = p.season_code
          and pair.gamecode = p.gamecode
@@ -1981,7 +2070,43 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
             round(avg(role2_max_teammate_off_fga_uplift) over w5, 4)
                 as pre_role2_l5_max_teammate_off_fga_uplift,
             round(avg(role2_max_teammate_off_fga_uplift) over w10, 4)
-                as pre_role2_l10_max_teammate_off_fga_uplift
+                as pre_role2_l10_max_teammate_off_fga_uplift,
+
+            lag(rotation_first_stint_minutes) over wall
+                as pre_rotation_last_first_stint_minutes,
+            round(avg(rotation_first_stint_minutes) over w3, 3)
+                as pre_rotation_l3_first_stint_minutes,
+            round(avg(rotation_first_stint_minutes) over w5, 3)
+                as pre_rotation_l5_first_stint_minutes,
+            round(avg(rotation_first_stint_minutes) over w10, 3)
+                as pre_rotation_l10_first_stint_minutes,
+            round(
+                avg(rotation_first_stint_minutes) over w3
+                    - avg(rotation_first_stint_minutes) over w10,
+                3
+            ) as pre_rotation_first_stint_trend_l3_vs_l10,
+
+            round(avg(rotation_stint_count::numeric) over w5, 3)
+                as pre_rotation_l5_stint_count,
+            round(avg(rotation_longest_stint_minutes) over w5, 3)
+                as pre_rotation_l5_longest_stint_minutes,
+            round(avg(rotation_first_exit_elapsed_minutes) over w5, 3)
+                as pre_rotation_l5_first_exit_elapsed_minutes,
+            round(avg(rotation_last_entry_elapsed_minutes) over w5, 3)
+                as pre_rotation_l5_last_entry_elapsed_minutes,
+            round(avg(rotation_closed_game::numeric) over w5, 4)
+                as pre_rotation_l5_close_game_rate,
+            round(avg(rotation_closed_game::numeric) over w10, 4)
+                as pre_rotation_l10_close_game_rate,
+            round(avg(rotation_closing_5m_share) over w5, 4)
+                as pre_rotation_l5_closing_5m_share,
+            round(avg(rotation_closing_5m_share) over w10, 4)
+                as pre_rotation_l10_closing_5m_share,
+            round(
+                avg(rotation_closing_5m_share) over w3
+                    - avg(rotation_closing_5m_share) over w10,
+                4
+            ) as pre_rotation_closing_share_trend_l3_vs_l10
         from player_hand_events
         window
             wall as (
@@ -2529,6 +2654,21 @@ def training_dataset_sql(minutes_basis: str = "official") -> str:
         pf.pre_role2_l5_mean_teammate_off_fga_uplift,
         pf.pre_role2_l5_max_teammate_off_fga_uplift,
         pf.pre_role2_l10_max_teammate_off_fga_uplift,
+
+        pf.pre_rotation_last_first_stint_minutes,
+        pf.pre_rotation_l3_first_stint_minutes,
+        pf.pre_rotation_l5_first_stint_minutes,
+        pf.pre_rotation_l10_first_stint_minutes,
+        pf.pre_rotation_first_stint_trend_l3_vs_l10,
+        pf.pre_rotation_l5_stint_count,
+        pf.pre_rotation_l5_longest_stint_minutes,
+        pf.pre_rotation_l5_first_exit_elapsed_minutes,
+        pf.pre_rotation_l5_last_entry_elapsed_minutes,
+        pf.pre_rotation_l5_close_game_rate,
+        pf.pre_rotation_l10_close_game_rate,
+        pf.pre_rotation_l5_closing_5m_share,
+        pf.pre_rotation_l10_closing_5m_share,
+        pf.pre_rotation_closing_share_trend_l3_vs_l10,
 
         pf.pre_last_top_pair_shared_minutes,
         pf.pre_last_top_pair_net_rating,
