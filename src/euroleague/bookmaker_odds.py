@@ -217,7 +217,7 @@ def _best_prefix_split(
     candidates: Iterable[AthleteCandidate],
 ) -> tuple[AthleteCandidate, int, str, float] | None:
     raw_tokens = participant_text.split()
-    if len(raw_tokens) < 2:
+    if not raw_tokens:
         return None
 
     exact_matches: list[tuple[AthleteCandidate, int, str, float]] = []
