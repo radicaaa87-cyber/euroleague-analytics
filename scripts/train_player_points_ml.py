@@ -1,5 +1,11 @@
 """Benchmark four tree-boosting families for EuroLeague player points.
 
+The point model is residual by construction: every row starts from a leakage-safe
+pregame simple scoring average, the model learns the delta from that baseline,
+and the final prediction is baseline + predicted delta. This keeps the model
+anchored to the player's established scoring level while allowing role, volume,
+matchup, availability, fatigue and other pre-game signals to move it.
+
 The script reads the hosted warehouse directly through its read-only database
 connection. It never pages play-by-play through ChatGPT/MCP.
 
@@ -117,6 +123,8 @@ def _write_predictions(
     path: Path,
     metadata: list[dict[str, Any]],
     actual: np.ndarray,
+    naive_baseline: np.ndarray,
+    predicted_delta: np.ndarray,
     predicted: np.ndarray,
     actual_minutes: np.ndarray,
     predicted_minutes: np.ndarray,
@@ -138,6 +146,8 @@ def _write_predictions(
         "predicted_minutes",
         "actual_fga",
         "predicted_fga",
+        "naive_baseline_points",
+        "predicted_delta_vs_naive",
         "actual_points",
         "predicted_points",
         "prediction_error",
@@ -146,9 +156,21 @@ def _write_predictions(
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for meta, y_true, y_pred, m_true, m_pred, f_true, f_pred in zip(
+        for (
+            meta,
+            y_true,
+            baseline,
+            delta_pred,
+            y_pred,
+            m_true,
+            m_pred,
+            f_true,
+            f_pred,
+        ) in zip(
             metadata,
             actual,
+            naive_baseline,
+            predicted_delta,
             predicted,
             actual_minutes,
             predicted_minutes,
@@ -163,6 +185,8 @@ def _write_predictions(
                     "predicted_minutes": round(float(m_pred), 4),
                     "actual_fga": round(float(f_true), 4),
                     "predicted_fga": round(float(f_pred), 4),
+                    "naive_baseline_points": round(float(baseline), 4),
+                    "predicted_delta_vs_naive": round(float(delta_pred), 4),
                     "actual_points": round(float(y_true), 4),
                     "predicted_points": round(float(y_pred), 4),
                     "prediction_error": round(float(y_pred - y_true), 4),
@@ -283,6 +307,13 @@ def main(argv: list[str] | None = None) -> int:
         dtype=float,
     )
     y = np.asarray([float(row[index["target_points"]]) for row in rows], dtype=float)
+    naive_baseline = np.asarray(
+        [float(row[index["pre_naive_points_mean"]]) for row in rows],
+        dtype=float,
+    )
+    if not np.all(np.isfinite(naive_baseline)):
+        raise RuntimeError("Naive baseline contains non-finite values.")
+    point_delta_y = y - naive_baseline
     season_values = np.asarray([str(row[index["season_code"]]) for row in rows], dtype=object)
 
     tuning_train_mask = _season_mask(season_values, {args.train_season})
@@ -304,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
 
     point_result = _benchmark_target(
         x,
-        y,
+        point_delta_y,
         tuning_train_mask,
         validation_mask,
         final_train_mask,
@@ -315,8 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     selected = point_result["selected"]
     selected_identity = point_result["identity"]
     final_model = point_result["model"]
-    test_prediction = point_result["test_prediction"]
-    test_metrics = point_result["blind_test"]
+    test_prediction_delta = point_result["test_prediction"]
+    test_naive_baseline = naive_baseline[test_mask]
+    test_prediction = test_naive_baseline + test_prediction_delta
+    test_metrics = _metric_summary(y[test_mask], test_prediction)
 
     minutes_y = np.asarray(
         [float(row[index["target_minutes"]]) for row in rows],
@@ -344,8 +377,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     baseline_index = feature_names.index("pre_l10_points")
-    baseline_prediction = x[test_mask, baseline_index]
-    baseline_metrics = _metric_summary(y[test_mask], baseline_prediction)
+    l10_baseline_prediction = x[test_mask, baseline_index]
+    l10_baseline_metrics = _metric_summary(y[test_mask], l10_baseline_prediction)
+    naive_baseline_metrics = _metric_summary(y[test_mask], test_naive_baseline)
 
     # The blind test has already been scored at this point. Permutation
     # importance is diagnostic only and cannot change family or parameter selection.
@@ -435,13 +469,26 @@ def main(argv: list[str] | None = None) -> int:
                 "blind_test": fga_result["blind_test"],
             },
         },
-        "l10_points_baseline": baseline_metrics,
-        "mae_improvement_vs_l10": float(baseline_metrics["mae"] - test_metrics["mae"]),
+        "prediction_architecture": {
+            "base": "pre_naive_points_mean",
+            "learned_target": "target_points - pre_naive_points_mean",
+            "final_prediction": "pre_naive_points_mean + predicted_delta",
+        },
+        "naive_points_baseline": naive_baseline_metrics,
+        "l10_points_baseline": l10_baseline_metrics,
+        "mae_improvement_vs_naive": float(
+            naive_baseline_metrics["mae"] - test_metrics["mae"]
+        ),
+        "mae_improvement_vs_l10": float(
+            l10_baseline_metrics["mae"] - test_metrics["mae"]
+        ),
         "permutation_importance": ranked_importance,
         "notes": [
             "All four model families use the identical feature matrix and chronological split.",
             "Family and parameter selection use E2024 validation only.",
             "Only the locked E2024 validation winner is scored on the E2025 blind test.",
+            "The point model predicts a residual from the leakage-safe simple pre-game "
+            "average; final points equal naive baseline plus predicted residual.",
             "All model inputs are pre-game pre_* features plus is_home.",
             "PBP-derived features are aggregated server-side from possessions, lineups and stints.",
             "Minutes and FGA are independently forecast as auxiliary role and volume targets.",
@@ -461,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
         pickle.dump(
             {
                 "model": final_model,
+                "point_model_target": "delta_vs_naive",
+                "naive_baseline_feature": "pre_naive_points_mean",
                 "minutes_model": minutes_result["model"],
                 "fga_model": fga_result["model"],
                 "model_family": selected["family"],
@@ -497,6 +546,8 @@ def main(argv: list[str] | None = None) -> int:
         args.predictions,
         metadata,
         y[test_mask],
+        test_naive_baseline,
+        test_prediction_delta,
         test_prediction,
         minutes_y[test_mask],
         minutes_result["test_prediction"],
