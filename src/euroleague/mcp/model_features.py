@@ -602,8 +602,7 @@ def get_player_model_context(cursor: Any, arguments: dict[str, Any]) -> dict[str
         unavailable = [
             availability_by_player[str(member["player_id"])]
             for member in lineup.get("players", [])
-            if member.get("player_id")
-            and str(member["player_id"]) in availability_by_player
+            if member.get("player_id") and str(member["player_id"]) in availability_by_player
         ]
         if unavailable:
             lineup["pregame_unavailable_players"] = unavailable
